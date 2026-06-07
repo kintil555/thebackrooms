@@ -12,20 +12,6 @@ pluginManagement {
     }
 }
 
-dependencyResolutionManagement {
-    repositories {
-        mavenCentral()
-        maven {
-            name = 'MinecraftForge'
-            url = 'https://maven.minecraftforge.net/'
-        }
-        maven {
-            name = 'Minecraft Libraries'
-            url = 'https://libraries.minecraft.net/'
-        }
-    }
-}
-
 plugins {
     id 'org.gradle.toolchains.foojay-resolver-convention' version '0.8.0'
 }
