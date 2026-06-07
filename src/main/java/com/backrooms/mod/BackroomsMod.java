@@ -1,11 +1,13 @@
 package com.backrooms.mod;
 
 import com.backrooms.mod.block.ModBlocks;
+import com.backrooms.mod.command.BackroomsCommand;
 import com.backrooms.mod.dimension.ModDimensions;
 import com.backrooms.mod.event.NullZoneEventHandler;
 import com.backrooms.mod.world.BackroomsChunkGeneratorType;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
@@ -34,6 +36,12 @@ public class BackroomsMod {
         modEventBus.addListener(this::clientSetup);
 
         MinecraftForge.EVENT_BUS.register(new NullZoneEventHandler());
+        MinecraftForge.EVENT_BUS.addListener(this::onRegisterCommands);
+    }
+
+    private void onRegisterCommands(RegisterCommandsEvent event) {
+        BackroomsCommand.register(event.getDispatcher());
+        LOGGER.info("[Backrooms] Commands registered.");
     }
 
     private void commonSetup(FMLCommonSetupEvent event) {
