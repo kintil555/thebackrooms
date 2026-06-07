@@ -21,9 +21,19 @@ public class ModBlocks {
             DeferredRegister.create(ForgeRegistries.ITEMS, BackroomsMod.MOD_ID);
 
     /**
-     * The Null Zone block — completely invisible, no collision, no occlusion.
-     * Players fall straight through it. When they reach bedrock level inside
-     * a null zone column, they get teleported to The Backrooms.
+     * Null Zone Ghost Block — sepenuhnya invisible, tidak ada collision.
+     * Player bisa jatuh/menembus block ini (noclip).
+     *
+     * Ketika player mencapai Y=-58 saat berada di dalam kolom null zone,
+     * mereka ter-teleport ke The Backrooms.
+     *
+     * Properties:
+     * - strength(-1, 3600000) = tidak bisa dihancurkan oleh player normal
+     * - noCollission()        = no physical collision
+     * - noOcclusion()         = tidak memblokir cahaya / rendering
+     * - isValidSpawn false    = mob tidak spawn di sini
+     * - isSuffocating false   = player tidak tercekik
+     * - isViewBlocking false  = kamera tidak terblokir
      */
     public static final RegistryObject<Block> GHOST_WALL = registerBlock("ghost_wall",
             () -> new GhostWallBlock(BlockBehaviour.Properties.of()
@@ -31,20 +41,22 @@ public class ModBlocks {
                     .noCollission()
                     .noOcclusion()
                     .replaceable()
-                    .air()
                     .lightLevel(state -> 0)
+                    .sound(SoundType.EMPTY)
+                    .isSuffocating((state, level, pos) -> false)
+                    .isViewBlocking((state, level, pos) -> false)
             ));
 
     /**
-     * Invisible marker block — used server-side to track null zone column tops.
-     * Treated as air, completely invisible.
+     * Null Zone Marker — marker tak terlihat di server untuk tracking posisi null zone.
+     * Tidak punya collision, tidak punya shape, sepenuhnya invisible.
      */
     public static final RegistryObject<Block> NULL_ZONE_MARKER = registerBlock("null_zone_marker",
             () -> new NullZoneMarkerBlock(BlockBehaviour.Properties.of()
                     .strength(-1.0f, 3600000.0f)
                     .noCollission()
                     .noOcclusion()
-                    .air()
+                    .sound(SoundType.EMPTY)
             ));
 
     private static <T extends Block> RegistryObject<T> registerBlock(String name, Supplier<T> block) {

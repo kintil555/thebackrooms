@@ -6,28 +6,35 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.Blocks;
 
 /**
- * Utility class for safe teleportation into the Backrooms dimension.
- * ITeleporter was removed in 1.21.1; teleportation now uses DimensionTransition directly.
+ * Utility untuk teleportasi aman ke dimensi Backrooms.
+ *
+ * DimensionTransition digunakan langsung (ITeleporter dihapus di 1.21.1).
+ * Class ini hanya bertanggung jawab untuk memastikan area pendaratan aman.
  */
 public class BackroomsTeleporter {
 
     /**
-     * Carves out a 3x2x3 breathable space at the landing location
-     * so the player isn't teleported inside a solid block.
+     * Membuat ruang aman di titik pendaratan agar player tidak masuk ke block solid.
+     * Lantai juga dipastikan solid — pakai sandstone (cocok dengan estetika backrooms).
      */
     public static void ensureSafeRoom(ServerLevel level, int x, int y, int z) {
+        // Pastikan lantai solid (sandstone = wallpaper backrooms)
         for (int dx = -1; dx <= 1; dx++) {
             for (int dz = -1; dz <= 1; dz++) {
+                BlockPos floor = new BlockPos(x + dx, y - 1, z + dz);
+                if (level.getBlockState(floor).isAir()) {
+                    level.setBlockAndUpdate(floor, Blocks.SANDSTONE.defaultBlockState());
+                }
+                // Bersihkan ruang 3 blok ke atas
                 for (int dy = 0; dy <= 2; dy++) {
                     BlockPos pos = new BlockPos(x + dx, y + dy, z + dz);
                     if (!level.getBlockState(pos).isAir()) {
-                        if (dy > 0 || level.getBlockState(pos.below()).isAir()) {
-                            level.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
-                        }
+                        level.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
                     }
                 }
             }
         }
-        BackroomsMod.LOGGER.debug("[Backrooms] Safe room carved at {},{},{}", x, y, z);
+
+        BackroomsMod.LOGGER.debug("[Backrooms] Safe landing zone carved at {},{},{}", x, y, z);
     }
 }

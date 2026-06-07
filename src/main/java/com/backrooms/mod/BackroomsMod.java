@@ -3,7 +3,7 @@ package com.backrooms.mod;
 import com.backrooms.mod.block.ModBlocks;
 import com.backrooms.mod.dimension.ModDimensions;
 import com.backrooms.mod.event.NullZoneEventHandler;
-import com.backrooms.mod.world.BackroomsWorldGenData;
+import com.backrooms.mod.event.WorldEventHandler;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.IEventBus;
@@ -23,23 +23,27 @@ public class BackroomsMod {
     public BackroomsMod(FMLJavaModLoadingContext context) {
         IEventBus modEventBus = context.getModEventBus();
 
-        // Register blocks
+        // Register blocks & items
         ModBlocks.BLOCKS.register(modEventBus);
         ModBlocks.ITEMS.register(modEventBus);
 
         // Register dimension keys
         ModDimensions.init();
 
-        // Register setup events
+        // Register setup events on mod bus
         modEventBus.addListener(this::commonSetup);
         modEventBus.addListener(this::clientSetup);
 
-        // Register world / forge event handlers
+        // Register forge event handlers on forge bus
+        // NullZoneEventHandler handles: chunk load + player tick (fallback teleport)
         MinecraftForge.EVENT_BUS.register(new NullZoneEventHandler());
+        // WorldEventHandler uses @Mod.EventBusSubscriber — registered automatically
+        // DO NOT also call MinecraftForge.EVENT_BUS.register(new WorldEventHandler())
+        // to avoid double-registration.
     }
 
     private void commonSetup(FMLCommonSetupEvent event) {
-        LOGGER.info("[Backrooms] Common setup complete.");
+        LOGGER.info("[Backrooms] Common setup complete. Null zones are watching...");
     }
 
     private void clientSetup(FMLClientSetupEvent event) {
