@@ -281,7 +281,7 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
         return ((long) cx * 1234567891L)
                 ^ ((long) cz * 9876543217L)
                 ^ ((long) axis * 0xABCDEF1234L)
-                ^ 0xB4CKR00MSL3V3LL;
+                ^ 0xB4C4B00B5DEAD1L;
     }
 
     // ─── Ceiling Light Strips ─────────────────────────────────────────────────
