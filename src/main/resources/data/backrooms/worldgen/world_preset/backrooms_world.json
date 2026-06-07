@@ -35,34 +35,10 @@
     "backrooms:backrooms": {
       "type": "backrooms:backrooms_type",
       "generator": {
-        "type": "minecraft:flat",
-        "settings": {
-          "biome": "backrooms:backrooms_biome",
-          "layers": [
-            {
-              "block": "minecraft:bedrock",
-              "height": 1
-            },
-            {
-              "block": "minecraft:sandstone",
-              "height": 3
-            },
-            {
-              "block": "minecraft:yellow_carpet",
-              "height": 1
-            },
-            {
-              "block": "minecraft:air",
-              "height": 3
-            },
-            {
-              "block": "minecraft:chiseled_stone_bricks",
-              "height": 1
-            }
-          ],
-          "structure_overrides": [],
-          "lakes": false,
-          "features": false
+        "type": "backrooms:backrooms_generator",
+        "biome_source": {
+          "type": "minecraft:fixed",
+          "biome": "backrooms:backrooms_biome"
         }
       }
     }
