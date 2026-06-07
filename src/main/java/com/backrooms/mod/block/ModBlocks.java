@@ -21,18 +21,18 @@ public class ModBlocks {
             DeferredRegister.create(ForgeRegistries.ITEMS, BackroomsMod.MOD_ID);
 
     /**
-     * Null Zone Ghost Block — sepenuhnya invisible, tidak ada collision.
-     * Player bisa jatuh/menembus block ini (noclip).
+     * Null Zone Ghost Block — terlihat PERSIS seperti blok asli yang digantikannya,
+     * tapi tidak punya collision (player bisa menembus / noclip).
      *
-     * Ketika player mencapai Y=-58 saat berada di dalam kolom null zone,
-     * mereka ter-teleport ke The Backrooms.
+     * Visual dirender oleh NullZoneBlockEntityRenderer menggunakan originalBlockState
+     * yang tersimpan di NullZoneBlockEntity.
      *
      * Properties:
      * - strength(-1, 3600000) = tidak bisa dihancurkan oleh player normal
-     * - noCollission()        = no physical collision
-     * - noOcclusion()         = tidak memblokir cahaya / rendering
-     * - isValidSpawn false    = mob tidak spawn di sini
-     * - isSuffocating false   = player tidak tercekik
+     * - noCollission()        = no physical collision → player nembus
+     * - noOcclusion()         = tidak memblokir cahaya / rendering neighbor
+     * - dynamicShape()        = shape dihitung per-BlockEntity (untuk outline box)
+     * - isSuffocating false   = player tidak tercekik saat di dalam block
      * - isViewBlocking false  = kamera tidak terblokir
      */
     public static final RegistryObject<Block> GHOST_WALL = registerBlock("ghost_wall",
@@ -40,8 +40,7 @@ public class ModBlocks {
                     .strength(-1.0f, 3600000.0f)
                     .noCollission()
                     .noOcclusion()
-                    .replaceable()
-                    .lightLevel(state -> 0)
+                    .dynamicShape()
                     .sound(SoundType.EMPTY)
                     .isSuffocating((state, level, pos) -> false)
                     .isViewBlocking((state, level, pos) -> false)

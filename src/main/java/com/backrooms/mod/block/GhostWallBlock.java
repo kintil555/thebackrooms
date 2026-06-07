@@ -1,38 +1,66 @@
 package com.backrooms.mod.block;
 
 import com.backrooms.mod.BackroomsMod;
+import com.backrooms.mod.blockentity.NullZoneBlockEntity;
 import com.backrooms.mod.dimension.ModDimensions;
 import com.backrooms.mod.event.BackroomsTeleporter;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.BlockGetter;
-import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.BaseEntityBlock;
+import net.minecraft.world.level.block.RenderShape;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.portal.DimensionTransition;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
-/**
- * Ghost Wall Block — sepenuhnya invisible dan tidak punya collision.
- *
- * CATATAN: Block ini TIDAK lagi ditempatkan di terrain overworld
- * (pendekatan lama merusak world generation).
- *
- * Block ini reserved untuk kemungkinan penempatan manual (creative mode)
- * atau future mechanic. Teleportasi ke backrooms kini dihandle sepenuhnya
- * oleh NullZoneEventHandler (deteksi Y bedrock) tanpa memodifikasi terrain.
- *
- * Method triggerBackroomsTransition() tetap dipakai oleh NullZoneEventHandler.
- */
-public class GhostWallBlock extends Block {
+import javax.annotation.Nullable;
 
-    // Y dimana backrooms floor berada (oak planks di Y=2, spawn player di Y=3)
+/**
+ * Null Zone Ghost Block — block pengganti yang:
+ *
+ * 1. Terlihat PERSIS seperti blok asli yang digantikannya.
+ *    Visual dihandle oleh NullZoneBlockEntityRenderer yang membaca
+ *    originalBlockState dari NullZoneBlockEntity.
+ *
+ * 2. TIDAK punya collision — player bisa menembus (noclip).
+ *
+ * 3. TIDAK bisa dihancurkan (hardness -1).
+ *
+ * 4. Saat player jatuh tembus ke bedrock null zone → trigger teleport.
+ *
+ * LORE:
+ *   Null Zone adalah area tak kasatmata di mana fabric of reality menipis.
+ *   Blok yang ada di dalamnya masih terlihat normal, tapi sudah tidak solid.
+ *   Player yang tidak waspada akan menembus dan "noclip out of reality".
+ */
+public class GhostWallBlock extends BaseEntityBlock {
+
     private static final int BACKROOMS_FLOOR_Y = 3;
 
     public GhostWallBlock(Properties properties) {
         super(properties);
+    }
+
+    // ─── BlockEntity ─────────────────────────────────────────────────────────
+
+    @Nullable
+    @Override
+    public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
+        return new NullZoneBlockEntity(pos, state);
+    }
+
+    /**
+     * Gunakan INVISIBLE agar game tidak mencoba render model default ghost_wall.
+     * Rendering asli dilakukan oleh NullZoneBlockEntityRenderer.
+     */
+    @Override
+    public RenderShape getRenderShape(BlockState state) {
+        return RenderShape.ENTITYBLOCK_ANIMATED;
     }
 
     // ─── No collision ─────────────────────────────────────────────────────────
@@ -40,13 +68,13 @@ public class GhostWallBlock extends Block {
     @Override
     public VoxelShape getCollisionShape(BlockState state, BlockGetter level,
                                         BlockPos pos, CollisionContext context) {
-        return Shapes.empty();
+        return Shapes.empty(); // Player, mob, proyektil semua nembus
     }
 
     @Override
     public VoxelShape getShape(BlockState state, BlockGetter level,
                                BlockPos pos, CollisionContext context) {
-        return Shapes.empty();
+        return Shapes.block(); // Outline tetap blok penuh agar ray-cast / highlight normal
     }
 
     @Override
@@ -57,8 +85,8 @@ public class GhostWallBlock extends Block {
     // ─── Teleport logic ───────────────────────────────────────────────────────
 
     /**
-     * Dipanggil oleh NullZoneEventHandler saat player memenuhi kondisi noclip.
-     * Juga bisa dipanggil dari mekanisme lain di masa depan.
+     * Dipanggil oleh NullZoneEventHandler saat player memenuhi kondisi noclip
+     * (menyentuh bedrock dalam kolom null zone).
      */
     public static void triggerBackroomsTransition(ServerPlayer player, ServerLevel serverLevel) {
         if (player.isOnPortalCooldown()) return;
@@ -74,7 +102,6 @@ public class GhostWallBlock extends Block {
         int spawnX = player.getBlockX();
         int spawnZ = player.getBlockZ();
 
-        // Carve safe room lalu spawn player di floor level
         BackroomsTeleporter.ensureSafeRoom(backroomsLevel, spawnX, BACKROOMS_FLOOR_Y, spawnZ);
 
         DimensionTransition transition = new DimensionTransition(
@@ -87,7 +114,6 @@ public class GhostWallBlock extends Block {
         );
         player.changeDimension(transition);
 
-        // Flavor text — Kane Pixels style
         player.sendSystemMessage(
                 net.minecraft.network.chat.Component.literal("§c§lYou have noclipped out of reality."));
         player.sendSystemMessage(
@@ -99,4 +125,3 @@ public class GhostWallBlock extends Block {
                 player.getName().getString(), spawnX, spawnZ);
     }
 }
-
