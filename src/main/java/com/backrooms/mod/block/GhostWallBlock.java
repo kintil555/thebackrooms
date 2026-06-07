@@ -6,9 +6,7 @@ import com.backrooms.mod.event.BackroomsTeleporter;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.BlockGetter;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.portal.DimensionTransition;
@@ -17,18 +15,16 @@ import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
 /**
- * Null Zone Block — sepenuhnya invisible dan tidak punya collision.
- * Player bisa jatuh/berjalan menembus block ini (noclip).
+ * Ghost Wall Block — sepenuhnya invisible dan tidak punya collision.
  *
- * Berdasarkan lore Kane Pixels:
- *   Null Zone = area di mana gelombang EM saling meniadakan,
- *   membuat portal sementara ke The Backrooms.
+ * CATATAN: Block ini TIDAK lagi ditempatkan di terrain overworld
+ * (pendekatan lama merusak world generation).
  *
- * Mekanisme:
- *   1. Satu kolom ghost block dari permukaan sampai Y=-63
- *   2. Player jatuh tembus (no collision)
- *   3. Ketika Y player <= -58, teleport ke Backrooms dimension
- *   4. Landing di ruangan backrooms yang sudah di-generate
+ * Block ini reserved untuk kemungkinan penempatan manual (creative mode)
+ * atau future mechanic. Teleportasi ke backrooms kini dihandle sepenuhnya
+ * oleh NullZoneEventHandler (deteksi Y bedrock) tanpa memodifikasi terrain.
+ *
+ * Method triggerBackroomsTransition() tetap dipakai oleh NullZoneEventHandler.
  */
 public class GhostWallBlock extends Block {
 
@@ -47,14 +43,10 @@ public class GhostWallBlock extends Block {
         return Shapes.empty();
     }
 
-    /**
-     * Micro-box kecil di tengah (tidak visible, tidak menghalangi apapun)
-     * Diperlukan agar entityInside() terpanggil reliably di Forge 1.21.1.
-     */
     @Override
     public VoxelShape getShape(BlockState state, BlockGetter level,
                                BlockPos pos, CollisionContext context) {
-        return Block.box(7, 7, 7, 9, 9, 9);
+        return Shapes.empty();
     }
 
     @Override
@@ -62,22 +54,12 @@ public class GhostWallBlock extends Block {
         return true;
     }
 
-    // ─── Trigger teleport saat player cukup dalam ─────────────────────────────
-
-    @Override
-    public void entityInside(BlockState state, Level level, BlockPos pos, Entity entity) {
-        if (level.isClientSide()) return;
-        if (!(entity instanceof ServerPlayer player)) return;
-        if (!(level instanceof ServerLevel serverLevel)) return;
-
-        // Trigger ketika player mendekati bedrock (Y <= -58)
-        if (player.getBlockY() > -58) return;
-
-        triggerBackroomsTransition(player, serverLevel);
-    }
-
     // ─── Teleport logic ───────────────────────────────────────────────────────
 
+    /**
+     * Dipanggil oleh NullZoneEventHandler saat player memenuhi kondisi noclip.
+     * Juga bisa dipanggil dari mekanisme lain di masa depan.
+     */
     public static void triggerBackroomsTransition(ServerPlayer player, ServerLevel serverLevel) {
         if (player.isOnPortalCooldown()) return;
 
@@ -117,3 +99,4 @@ public class GhostWallBlock extends Block {
                 player.getName().getString(), spawnX, spawnZ);
     }
 }
+
