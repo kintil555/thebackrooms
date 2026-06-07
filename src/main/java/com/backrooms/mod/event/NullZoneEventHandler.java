@@ -19,7 +19,7 @@ import net.minecraftforge.event.level.ChunkEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
-import net.minecraft.server.level.DimensionTransition;
+import net.minecraft.world.level.portal.DimensionTransition;
 
 import java.util.*;
 
