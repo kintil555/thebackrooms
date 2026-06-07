@@ -68,13 +68,13 @@ public class GhostWallBlock extends Block {
         if (!serverLevel.getBlockState(below).is(net.minecraft.world.level.block.Blocks.BEDROCK)) return;
 
         // Cooldown: use player's portal cooldown to avoid double-teleport
-        if (player.portalCooldown > 0) return;
+        if (player.isOnPortalCooldown()) return;
 
         // Teleport to Backrooms
         ServerLevel backroomsLevel = serverLevel.getServer().getLevel(ModDimensions.BACKROOMS_LEVEL);
         if (backroomsLevel == null) return;
 
-        player.portalCooldown = 200; // 10 second cooldown
+        player.setPortalCooldown(200); // 10 second cooldown
 
         int spawnX = player.getBlockX();
         int spawnZ = player.getBlockZ();
