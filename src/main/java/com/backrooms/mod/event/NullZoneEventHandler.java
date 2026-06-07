@@ -61,8 +61,14 @@ public class NullZoneEventHandler {
     /** Players currently in the process of being teleported (cooldown to avoid double-tp). */
     private final Set<UUID> teleportCooldown = new HashSet<>();
 
+    /** Track when each player joined (server tick count) to give a grace period. */
+    private final Map<UUID, Long> joinTimeTick = new java.util.HashMap<>();
+
     /** Ticks since we last did a nearby-null-zone check. */
     private int tickCounter = 0;
+
+    /** Grace period in ticks before a newly-joined player can be teleported (200 ticks = 10 seconds). */
+    private static final int JOIN_GRACE_PERIOD_TICKS = 200;
 
     // ─── Chunk Load: Place Null Zones ─────────────────────────────────────────────
 
@@ -111,7 +117,7 @@ public class NullZoneEventHandler {
 
                 // Only replace solid non-bedrock blocks (don't replace air, fluid, bedrock)
                 if (!existingState.isAir()
-                        && !existingState.getFluidState().isEmpty()
+                        && existingState.getFluidState().isEmpty()
                         && !existingState.is(Blocks.BEDROCK)) {
                     level.setBlockAndUpdate(pos,
                             ModBlocks.GHOST_WALL.get().defaultBlockState());
@@ -131,6 +137,17 @@ public class NullZoneEventHandler {
         }
     }
 
+    // ─── Player Join: Register join time for grace period ───────────────────────
+
+    @SubscribeEvent
+    public void onEntityJoinLevel(EntityJoinLevelEvent event) {
+        if (event.getLevel().isClientSide()) return;
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        if (!event.getLevel().dimension().equals(Level.OVERWORLD)) return;
+        joinTimeTick.put(player.getUUID(), (long) tickCounter);
+        BackroomsMod.LOGGER.debug("[Backrooms] Player {} joined overworld at tick {}", player.getName().getString(), tickCounter);
+    }
+
     // ─── Server Tick: Detect falling players and spawn random nearby null zones ──
 
     @SubscribeEvent
@@ -147,7 +164,11 @@ public class NullZoneEventHandler {
         for (ServerPlayer player : overworld.players()) {
             // ── 1. Check if player has fallen into the void ──────────────────────
             if (player.getY() < VOID_THRESHOLD_Y && !teleportCooldown.contains(player.getUUID())) {
-                teleportToBackrooms(player, server);
+                // Grace period: don't teleport for JOIN_GRACE_PERIOD_TICKS after joining
+                long joinTick = joinTimeTick.getOrDefault(player.getUUID(), (long) -JOIN_GRACE_PERIOD_TICKS);
+                if (tickCounter - joinTick >= JOIN_GRACE_PERIOD_TICKS) {
+                    teleportToBackrooms(player, server);
+                }
             }
 
             // ── 2. Random nearby null zone spawning ──────────────────────────────
@@ -277,5 +298,7 @@ public class NullZoneEventHandler {
             ServerPlayer p = server.getPlayerList().getPlayer(uuid);
             return p == null || p.getY() > VOID_THRESHOLD_Y + 10;
         });
+        // Also clean up joinTimeTick for players who have left
+        joinTimeTick.keySet().removeIf(uuid -> server.getPlayerList().getPlayer(uuid) == null);
     }
 }
