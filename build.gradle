@@ -24,19 +24,13 @@ minecraft {
 sourceSets.main.resources { srcDir 'src/generated/resources' }
 
 repositories {
-    maven {
-        name = 'MinecraftForge'
-        url = 'https://maven.minecraftforge.net/'
-    }
-    maven {
-        name = 'Minecraft Libraries'
-        url = 'https://libraries.minecraft.net/'
-    }
+    maven fg.forgeMaven
+    maven fg.minecraftLibsMaven
     mavenCentral()
 }
 
 dependencies {
-    minecraft 'net.minecraftforge:forge:1.21.1-52.1.0'
+    implementation minecraft.dependency('net.minecraftforge:forge:1.21.1-52.1.0')
 }
 
 tasks.named('jar', Jar).configure {
@@ -51,7 +45,6 @@ tasks.named('jar', Jar).configure {
                 "Implementation-Timestamp": new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
         ])
     }
-    finalizedBy 'reobfJar'
 }
 
 publishing {
