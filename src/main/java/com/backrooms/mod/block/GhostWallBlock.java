@@ -4,6 +4,7 @@ import com.backrooms.mod.BackroomsMod;
 import com.backrooms.mod.blockentity.NullZoneBlockEntity;
 import com.backrooms.mod.dimension.ModDimensions;
 import com.backrooms.mod.event.BackroomsTeleporter;
+import com.mojang.serialization.MapCodec;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -42,8 +43,16 @@ public class GhostWallBlock extends BaseEntityBlock {
 
     private static final int BACKROOMS_FLOOR_Y = 3;
 
+    /** Required by BaseEntityBlock in 1.21.1 — used for block serialization. */
+    public static final MapCodec<GhostWallBlock> CODEC = simpleCodec(GhostWallBlock::new);
+
     public GhostWallBlock(Properties properties) {
         super(properties);
+    }
+
+    @Override
+    protected MapCodec<? extends BaseEntityBlock> codec() {
+        return CODEC;
     }
 
     // ─── BlockEntity ─────────────────────────────────────────────────────────
