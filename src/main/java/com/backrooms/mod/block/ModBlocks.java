@@ -40,7 +40,6 @@ public class ModBlocks {
                     .strength(-1.0f, 3600000.0f)
                     .noCollission()
                     .noOcclusion()
-                    .dynamicShape()
                     .sound(SoundType.EMPTY)
                     .isSuffocating((state, level, pos) -> false)
                     .isViewBlocking((state, level, pos) -> false)

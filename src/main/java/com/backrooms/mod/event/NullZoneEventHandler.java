@@ -2,20 +2,16 @@ package com.backrooms.mod.event;
 
 import com.backrooms.mod.BackroomsMod;
 import com.backrooms.mod.block.GhostWallBlock;
-import com.backrooms.mod.block.ModBlocks;
-import com.backrooms.mod.blockentity.NullZoneBlockEntity;
 import com.backrooms.mod.world.NullZoneManager;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.level.ChunkEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -26,45 +22,36 @@ import java.util.Random;
  * Handler utama untuk sistem Null Zone.
  *
  * ═══════════════════════════════════════════════════════════════
- * KONSEP (sesuai lore Kane Pixels):
+ * PENDEKATAN FINAL — tidak ubah terrain sama sekali.
  *
- *   Null Zone = kolom tak kasatmata dimana fabric of reality menipis.
- *   Blok yang ada di kolom ini masih TERLIHAT normal (rendering asli),
- *   tapi sudah tidak punya collision — player bisa menembus (noclip).
+ * Null Zone = area 1×∞×1 (x, semua Y, z) yang "tipis realitasnya".
+ * Terrain TIDAK DIUBAH — blok aslinya tetap ada secara normal.
  *
- *   Kolom null zone: dari surface Y sampai Y_MIN, satu blok lebarnya.
- *   Bedrocknya tetap di tempat TAPI ditandai sebagai trigger teleport.
+ * Efek noclip diimplementasi di server:
+ *   Saat player memasuki kolom null zone (XZ sama), player.setNoClip(true)
+ *   diaktifkan → player menembus semua blok di kolom itu.
+ *   Gravity tetap berlaku → player jatuh ke bawah menembus terrain.
+ *   Saat player mencapai Y bedrock → teleport ke backrooms.
  *
- * ═══════════════════════════════════════════════════════════════
- * MEKANISME:
- *
- * 1. CHUNK LOAD (~6.7% chunk mendapat null zone):
- *    - Pilih 1 titik acak (x, z) di dalam chunk
- *    - Dari surface Y ke bawah sampai bedrock:
- *        * Simpan originalBlockState di NullZoneBlockEntity
- *        * Ganti dengan GhostWallBlock (no collision, render seperti asli)
- *        * Bedrock dibiarkan TETAP sebagai bedrock (trigger teleport)
- *    - Catat posisi di NullZoneManager
- *
- * 2. PLAYER TICK (setiap 5 tick):
- *    - Cek apakah player menyentuh bedrock DI DALAM null zone area
- *    - Jika ya → trigger teleport ke backrooms dimension
+ * Catatan: noClip di Forge 1.21.1 = player.noPhysics field (server-side).
+ * Kita set true saat masuk kolom, false saat keluar (atau setelah teleport).
  *
  * ═══════════════════════════════════════════════════════════════
- * MENGAPA TIDAK MENYENTUH SEMUA BLOK:
- *   Hanya 1 kolom per ~15 chunk → tidak merusak terrain secara visual
- *   Blok sekitarnya tetap normal
+ * MENGAPA TIDAK UBAH BLOK:
+ *   Setiap blok yang diganti dengan ghost block (noOcclusion) merusak
+ *   face culling tetangga → lubang hitam / void visual di terrain.
+ *   Solusi: biarkan blok asli, pakai noPhysics untuk player saja.
  */
 public class NullZoneEventHandler {
 
-    /** 1 dari N chunk mendapat null zone (~6.7%). Naikkan N untuk lebih jarang. */
+    /** 1 dari N chunk mendapat null zone (~6.7%). */
     private static final int NULL_ZONE_SPAWN_CHANCE = 15;
 
-    /** Y dimana bedrock berada (trigger teleport jika di null zone). */
-    private static final int BEDROCK_Y = -64;
-
-    /** Player dianggap "menyentuh bedrock" jika Y <= threshold ini. */
+    /** Y trigger teleport — player sudah jauh di bawah bedrock. */
     private static final int TELEPORT_TRIGGER_Y = -62;
+
+    /** Seberapa jauh player harus berada dari titik null zone (radius XZ). */
+    private static final double NULL_ZONE_RADIUS = 0.6;
 
     // ─── Chunk Load ───────────────────────────────────────────────────────────
 
@@ -79,7 +66,6 @@ public class NullZoneEventHandler {
 
         ChunkPos chunkPos = chunk.getPos();
 
-        // Seed deterministik per-chunk: world seed + koordinat chunk
         long chunkSeed = serverLevel.getSeed()
                 ^ ((long) chunkPos.x * 341873128712L)
                 ^ ((long) chunkPos.z * 132897987541L);
@@ -87,100 +73,93 @@ public class NullZoneEventHandler {
 
         if (rng.nextInt(NULL_ZONE_SPAWN_CHANCE) != 0) return;
 
-        // Jadwalkan di server tick berikutnya — aman saat chunk loading
-        final int localX = rng.nextInt(16);
-        final int localZ = rng.nextInt(16);
+        int localX = rng.nextInt(16);
+        int localZ = rng.nextInt(16);
+        int worldX = chunkPos.getMinBlockX() + localX;
+        int worldZ = chunkPos.getMinBlockZ() + localZ;
 
-        serverLevel.getServer().execute(() -> {
-            if (!serverLevel.hasChunk(chunkPos.x, chunkPos.z)) return;
-            // Cek apakah sudah ada null zone di sini (dari sesi sebelumnya)
-            int worldX = chunkPos.getMinBlockX() + localX;
-            int worldZ = chunkPos.getMinBlockZ() + localZ;
-            if (NullZoneManager.isNullZone(serverLevel.dimension(), worldX, worldZ)) return;
-            placeNullZone(serverLevel, worldX, worldZ);
-        });
+        // Hanya catat posisi — TIDAK ubah blok apapun
+        NullZoneManager.register(serverLevel.dimension(), new BlockPos(worldX, 0, worldZ));
+
+        BackroomsMod.LOGGER.debug(
+                "[Backrooms] ✦ Null Zone registered at X={} Z={} chunk {}",
+                worldX, worldZ, chunkPos);
     }
 
-    // ─── Place Null Zone Column ───────────────────────────────────────────────
-
-    /**
-     * Ganti satu kolom vertikal (x, z) dari surface ke Y_MIN dengan GhostWallBlock.
-     * Setiap ghost block menyimpan originalBlockState di BlockEntity-nya.
-     * Bedrock dibiarkan — dipakai sebagai trigger teleport.
-     */
-    private void placeNullZone(ServerLevel level, int worldX, int worldZ) {
-        // Cari surface Y (posisi tertinggi blok solid)
-        int surfaceY = level.getHeight(Heightmap.Types.WORLD_SURFACE, worldX, worldZ) - 1;
-
-        // Batasi: jangan buat null zone di void atau sangat tinggi
-        if (surfaceY < -60 || surfaceY > 320) {
-            surfaceY = 64;
-        }
-
-        BlockState ghostState = ModBlocks.GHOST_WALL.get().defaultBlockState();
-        int ghostCount = 0;
-
-        // Dari surface ke bedrock (tidak termasuk bedrock itu sendiri)
-        for (int y = surfaceY; y > BEDROCK_Y; y--) {
-            BlockPos pos = new BlockPos(worldX, y, worldZ);
-            BlockState existing = level.getBlockState(pos);
-
-            // Skip: sudah jadi ghost block
-            if (existing.is(ModBlocks.GHOST_WALL.get())) continue;
-            // Skip: bedrock — biarkan jadi trigger teleport
-            if (existing.is(Blocks.BEDROCK)) continue;
-            // Skip: air dan void — tidak perlu ghost block di sini
-            if (existing.isAir() && y < 0) continue;
-
-            // Simpan originalState dan ganti dengan ghost block
-            BlockState originalState = existing;
-            level.setBlock(pos, ghostState, 2 | 16); // flag 2=update client, 16=no neighbor update
-
-            // Simpan originalState ke BlockEntity
-            BlockEntity be = level.getBlockEntity(pos);
-            if (be instanceof NullZoneBlockEntity nullZoneBE) {
-                nullZoneBE.setOriginalBlockState(originalState);
-                level.sendBlockUpdated(pos, ghostState, ghostState, 2);
-            }
-
-            ghostCount++;
-        }
-
-        // Catat posisi null zone
-        NullZoneManager.register(level.dimension(), new BlockPos(worldX, 0, worldZ));
-
-        BackroomsMod.LOGGER.info(
-                "[Backrooms] ✦ Null Zone placed at X={} Z={} (surface Y={}, {} blocks converted)",
-                worldX, worldZ, surfaceY, ghostCount);
-    }
-
-    // ─── Player Tick: Deteksi Teleport ────────────────────────────────────────
+    // ─── Player Tick ──────────────────────────────────────────────────────────
 
     @SubscribeEvent
     public void onPlayerTick(TickEvent.PlayerTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
         if (!(event.player instanceof ServerPlayer player)) return;
         if (!player.level().dimension().equals(Level.OVERWORLD)) return;
-        if (player.tickCount % 5 != 0) return;
 
         int playerY = player.getBlockY();
 
-        // Player harus cukup rendah (dekat bedrock) untuk trigger
-        if (playerY > TELEPORT_TRIGGER_Y) return;
+        // ── Cek apakah player ada di XZ kolom null zone ──────────────────
+        boolean inNullZone = isPlayerInNullZoneColumn(player);
 
-        // Cek apakah player berada di dalam kolom null zone
-        boolean inNullZone = NullZoneManager.isNullZone(
-                player.level().dimension(), player.getBlockX(), player.getBlockZ());
+        if (inNullZone) {
+            // Aktifkan noPhysics → player jatuh nembus blok
+            if (!player.noPhysics) {
+                player.noPhysics = true;
+                BackroomsMod.LOGGER.debug(
+                        "[Backrooms] Player {} entered null zone at X={} Z={}, noPhysics ON",
+                        player.getName().getString(), player.getBlockX(), player.getBlockZ());
+            }
 
-        if (!inNullZone) return;
+            // Pastikan player tetap jatuh (gravity) meski noPhysics
+            // noPhysics menghilangkan collision tapi gravity masih berlaku
+            // Namun gravity butuh collision untuk berhenti — kita tambah downward velocity
+            Vec3 vel = player.getDeltaMovement();
+            if (vel.y > -0.5) {
+                // Tambahkan gravitasi manual agar player terus jatuh
+                player.setDeltaMovement(vel.x * 0.3, Math.min(vel.y - 0.08, -0.1), vel.z * 0.3);
+            }
 
-        // Player di null zone dan dekat bedrock → noclip trigger!
-        if (player.level() instanceof ServerLevel sl) {
-            BackroomsMod.LOGGER.info(
-                    "[Backrooms] Player {} noclipped at null zone X={} Z={} Y={}",
-                    player.getName().getString(),
-                    player.getBlockX(), player.getBlockZ(), playerY);
-            GhostWallBlock.triggerBackroomsTransition(player, sl);
+            // ── Trigger teleport saat sudah sangat dalam ────────────────
+            if (playerY <= TELEPORT_TRIGGER_Y && player.tickCount % 5 == 0) {
+                if (player.level() instanceof ServerLevel sl) {
+                    player.noPhysics = false; // Reset sebelum teleport
+                    GhostWallBlock.triggerBackroomsTransition(player, sl);
+                }
+            }
+
+        } else {
+            // Player keluar dari kolom null zone → kembalikan physics normal
+            if (player.noPhysics && player.tickCount % 3 == 0) {
+                player.noPhysics = false;
+            }
         }
+    }
+
+    // ─── Helper: cek apakah player di dalam radius kolom null zone ────────────
+
+    private boolean isPlayerInNullZoneColumn(ServerPlayer player) {
+        double px = player.getX();
+        double pz = player.getZ();
+
+        // Cek blok-blok terdekat di radius (null zone hanya 1×1 XZ)
+        int bx = player.getBlockX();
+        int bz = player.getBlockZ();
+
+        // Cek exact position dan 1 blok sekitarnya untuk toleransi
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                int cx = bx + dx;
+                int cz = bz + dz;
+                if (!NullZoneManager.isNullZone(player.level().dimension(), cx, cz)) continue;
+
+                // Hitung jarak dari center blok null zone ke player
+                double centerX = cx + 0.5;
+                double centerZ = cz + 0.5;
+                double distSq = (px - centerX) * (px - centerX) + (pz - centerZ) * (pz - centerZ);
+
+                if (distSq <= NULL_ZONE_RADIUS * NULL_ZONE_RADIUS) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 }

@@ -1,12 +1,9 @@
 package com.backrooms.mod;
 
 import com.backrooms.mod.block.ModBlocks;
-import com.backrooms.mod.blockentity.ModBlockEntities;
-import com.backrooms.mod.client.NullZoneBlockEntityRenderer;
 import com.backrooms.mod.dimension.ModDimensions;
 import com.backrooms.mod.event.NullZoneEventHandler;
 import com.backrooms.mod.world.BackroomsChunkGeneratorType;
-import net.minecraft.client.renderer.blockentity.BlockEntityRenderers;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.IEventBus;
@@ -26,23 +23,16 @@ public class BackroomsMod {
     public BackroomsMod(FMLJavaModLoadingContext context) {
         IEventBus modEventBus = context.getModEventBus();
 
-        // Register blocks & items
         ModBlocks.BLOCKS.register(modEventBus);
         ModBlocks.ITEMS.register(modEventBus);
 
-        // Register block entities
-        ModBlockEntities.register(modEventBus);
-
-        // Register custom chunk generator type
         BackroomsChunkGeneratorType.register(modEventBus);
 
-        // Register dimension keys
         ModDimensions.init();
 
         modEventBus.addListener(this::commonSetup);
         modEventBus.addListener(this::clientSetup);
 
-        // NullZoneEventHandler: chunk load + player tick
         MinecraftForge.EVENT_BUS.register(new NullZoneEventHandler());
     }
 
@@ -51,16 +41,6 @@ public class BackroomsMod {
     }
 
     private void clientSetup(FMLClientSetupEvent event) {
-        // Daftarkan renderer untuk NullZoneBlockEntity
-        // Renderer ini membuat ghost block tampak seperti blok aslinya
-        event.enqueueWork(() -> {
-            BlockEntityRenderers.register(
-                    ModBlockEntities.NULL_ZONE_BE.get(),
-                    NullZoneBlockEntityRenderer::new
-            );
-            LOGGER.info("[Backrooms] NullZone block entity renderer registered.");
-        });
-
         LOGGER.info("[Backrooms] Client ready.");
     }
 
