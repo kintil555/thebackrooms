@@ -2,7 +2,7 @@ plugins {
     id 'eclipse'
     id 'idea'
     id 'maven-publish'
-    id 'net.minecraftforge.gradle' version '[6.0,6.2)'
+    id 'net.minecraftforge.gradle' version '[7.0,8.0)'
 }
 
 version = '1.0.0'
@@ -60,7 +60,9 @@ repositories {
 }
 
 dependencies {
-    minecraft 'net.minecraftforge:forge:1.21.1-47.3.0'
+    // Forge 52.1.0 is the correct version for Minecraft 1.21.1
+    // (47.x was for 1.20.1)
+    minecraft 'net.minecraftforge:forge:1.21.1-52.1.0'
 }
 
 jar {

@@ -1,7 +1,7 @@
 modLoader="javafml"
-loaderVersion="[47,)"
+loaderVersion="[52,)"
 license="MIT"
-issueTrackerURL="https://github.com/example/backrooms/issues"
+issueTrackerURL="https://github.com/kintil555/thebackrooms/issues"
 
 [[mods]]
     modId="backrooms"
@@ -12,13 +12,12 @@ issueTrackerURL="https://github.com/example/backrooms/issues"
         Fall through null zones to escape into the endless yellow hallways.
         Some chunks have ghost blocks - blocks you can walk through that lead to the void below.
     '''
-    logoFile="backrooms.png"
     authors="BackroomsMod"
 
 [[dependencies.backrooms]]
     modId="forge"
     mandatory=true
-    versionRange="[47.3,)"
+    versionRange="[52.1,)"
     ordering="NONE"
     side="BOTH"
 
