@@ -17,31 +17,42 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Custom ChunkGenerator untuk dimensi Backrooms — Level 0.
+ * BackroomsChunkGenerator — Level 0 "The Lobby"
  *
- * Menghasilkan labirin ruangan dan koridor infinite dengan block vanilla,
- * persis seperti referensi Kane Pixels / screenshot:
+ * Rebuilt to match Kane Pixels / screenshot reference:
  *
- * MATERIAL (semua vanilla):
- *   Lantai  → Oak Planks (kayu coklat — seperti screenshot)
- *   Dinding → Birch Planks + Sandstone (alternasi panel kayu & plester kuning)
- *   Langit  → Stone Bricks + Chiseled Stone Bricks
- *   Lampu   → Glowstone tersembunyi di atas langit-langit
- *   Atap    → Bedrock
+ * MATERIALS:
+ *   Floor   → Oak Planks (warm brown wood)
+ *   Wall    → Sandstone (yellowish plaster) + Birch Planks wainscoting border
+ *   Ceiling → Gray Concrete tiles (office suspended ceiling)
+ *   Light   → Ochre Froglight strips (warm fluorescent glow)
+ *   Hidden  → Glowstone hidden above froglight (actual light source)
+ *   Pillars → Sandstone pillars at room corners/centers
+ *   Trim    → Smooth Sandstone (wall base trim / wainscoting)
  *
- * LAYOUT VERTIKAL:
- *   Y=0  bedrock floor
- *   Y=1  sandstone sub-floor
- *   Y=2  oak planks (lantai)
- *   Y=3-6 air (4 blok tinggi ruangan)
- *   Y=7  stone bricks langit-langit
- *   Y=8  bedrock atap (glowstone di sini pada titik lampu)
+ * VERTICAL LAYOUT (room height = 5 blocks — more open, less claustrophobic):
+ *   Y=0    Bedrock (void floor)
+ *   Y=1    Sandstone sub-floor
+ *   Y=2    Oak Planks (floor)
+ *   Y=3-6  AIR — 4 blocks of walkable room height
+ *   Y=7    Ceiling: Gray Concrete tile grid OR Ochre Froglight strip
+ *   Y=8    Glowstone (at light strips) or Bedrock (opaque roof)
+ *
+ * CEILING DETAIL:
+ *   The ceiling alternates Gray Concrete (tiles) and Ochre Froglight strips
+ *   every 4 blocks along X-axis, replicating fluorescent office strips.
+ *   Froglight goes at Y=7, Glowstone at Y=8 above them for actual illumination.
+ *
+ * ROOM LAYOUT — using 8x8 cell size per room, 2 rooms per chunk side:
+ *   Rooms are 8x8 blocks wide, corridors are 4 blocks wide.
+ *   This gives spacious rooms that look like the screenshot.
+ *   Pillars placed at inner corners of room intersections.
  *
  * MAZE ALGORITHM:
- *   Grid 4×4 sel per chunk (tiap sel = 4×4 blok).
- *   75% sel terbuka, 25% dinding solid.
- *   Koridor 2-blok lebar menghubungkan sel yang bersebelahan.
- *   Seed deterministik → same world seed = same layout setiap kali.
+ *   Uses a room-based approach with per-room-edge corridor decisions.
+ *   Each chunk has 2x2 "macro rooms" (8x8 each).
+ *   Corridors connect rooms along shared edges.
+ *   Pillars generated at room grid intersections (every 8 blocks).
  */
 public class BackroomsChunkGenerator extends ChunkGenerator {
 
@@ -51,31 +62,47 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
                             .forGetter(BackroomsChunkGenerator::getBiomeSource)
             ).apply(instance, BackroomsChunkGenerator::new));
 
-    // ─── Y levels ─────────────────────────────────────────────────────────────
-    private static final int Y_BEDROCK_FLOOR = 0;
-    private static final int Y_SUBFLOOR      = 1;
-    private static final int Y_FLOOR         = 2;
-    private static final int Y_ROOM_LOW      = 3;
-    private static final int Y_ROOM_HIGH     = 6;
-    private static final int Y_CEILING       = 7;
-    private static final int Y_ROOF          = 8;
+    // ─── Y Levels ─────────────────────────────────────────────────────────────
+    private static final int Y_BEDROCK     = 0;
+    private static final int Y_SUBFLOOR    = 1;
+    private static final int Y_FLOOR       = 2;
+    private static final int Y_ROOM_BOTTOM = 3;
+    private static final int Y_ROOM_TOP    = 6;  // 4 air blocks (Y 3,4,5,6)
+    private static final int Y_CEILING     = 7;
+    private static final int Y_ABOVE_CEIL  = 8;
 
-    // ─── Block states ─────────────────────────────────────────────────────────
-    private static final BlockState BEDROCK      = Blocks.BEDROCK.defaultBlockState();
-    private static final BlockState SUBFLOOR_BLK = Blocks.SANDSTONE.defaultBlockState();
-    private static final BlockState FLOOR_BLK    = Blocks.OAK_PLANKS.defaultBlockState();
-    private static final BlockState WALL_A       = Blocks.BIRCH_PLANKS.defaultBlockState();
-    private static final BlockState WALL_B       = Blocks.SANDSTONE.defaultBlockState();
-    private static final BlockState CEIL_NORMAL  = Blocks.STONE_BRICKS.defaultBlockState();
-    private static final BlockState CEIL_LIGHT   = Blocks.CHISELED_STONE_BRICKS.defaultBlockState();
-    private static final BlockState GLOWSTONE    = Blocks.GLOWSTONE.defaultBlockState();
-    private static final BlockState AIR          = Blocks.AIR.defaultBlockState();
+    // ─── Block States ─────────────────────────────────────────────────────────
+    private static final BlockState BEDROCK_BLK     = Blocks.BEDROCK.defaultBlockState();
+    private static final BlockState SUBFLOOR_BLK    = Blocks.SANDSTONE.defaultBlockState();
+    private static final BlockState FLOOR_BLK       = Blocks.OAK_PLANKS.defaultBlockState();
 
-    // ─── Maze settings ────────────────────────────────────────────────────────
-    /** Ukuran tiap sel maze dalam blok (4→ 4×4 sel per chunk 16×16). */
-    private static final int CELL_SIZE = 4;
-    /** Jumlah sel per sisi chunk. */
-    private static final int GRID_CELLS = 4; // 16 / 4
+    // Walls — sandstone as main wall plaster, smooth sandstone wainscoting trim
+    private static final BlockState WALL_PLASTER     = Blocks.SANDSTONE.defaultBlockState();
+    private static final BlockState WALL_WAINSCOT    = Blocks.SMOOTH_SANDSTONE.defaultBlockState();
+
+    // Ceiling — gray concrete tiles + froglight strips
+    private static final BlockState CEIL_TILE        = Blocks.GRAY_CONCRETE.defaultBlockState();
+    private static final BlockState CEIL_FROGLIGHT   = Blocks.OCHRE_FROGLIGHT.defaultBlockState();
+    private static final BlockState GLOWSTONE_BLK    = Blocks.GLOWSTONE.defaultBlockState();
+
+    // Pillars — sandstone column
+    private static final BlockState PILLAR_BLK       = Blocks.CHISELED_SANDSTONE.defaultBlockState();
+
+    private static final BlockState AIR_BLK          = Blocks.AIR.defaultBlockState();
+
+    // ─── Room/Grid settings ───────────────────────────────────────────────────
+    /**
+     * Room cell size in blocks. 8 = 2 rooms per 16-block chunk.
+     * Rooms are 6 blocks of open interior (8 - 2 walls on sides).
+     */
+    private static final int ROOM_SIZE  = 8;
+    private static final int ROOMS_PER_CHUNK = 2; // 16 / 8
+
+    /**
+     * Corridor width (open gap between rooms).
+     * 4 blocks wide → matches the spacious corridors in screenshot.
+     */
+    private static final int CORRIDOR_HALF = 2; // ±2 from center = 4 wide
 
     public BackroomsChunkGenerator(BiomeSource biomeSource) {
         super(biomeSource);
@@ -97,13 +124,16 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
 
         int chunkX = chunk.getPos().x;
         int chunkZ = chunk.getPos().z;
-        long seed   = chunkSeed(chunkX, chunkZ);
 
-        boolean[][] open = buildMazeGrid(chunkX, chunkZ, seed);
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        int baseX = chunk.getPos().getMinBlockX();
+        int baseZ = chunk.getPos().getMinBlockZ();
 
         for (int lx = 0; lx < 16; lx++) {
             for (int lz = 0; lz < 16; lz++) {
-                fillColumn(chunk, lx, lz, open, chunkX, chunkZ, seed);
+                int wx = baseX + lx;
+                int wz = baseZ + lz;
+                fillColumn(chunk, pos, lx, lz, wx, wz);
             }
         }
         return CompletableFuture.completedFuture(chunk);
@@ -111,180 +141,182 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
 
     // ─── Column fill ──────────────────────────────────────────────────────────
 
-    private void fillColumn(ChunkAccess chunk, int lx, int lz,
-                             boolean[][] open, int chunkX, int chunkZ, long seed) {
+    private void fillColumn(ChunkAccess chunk, BlockPos.MutableBlockPos pos,
+                             int lx, int lz, int wx, int wz) {
 
-        int cellX  = lx / CELL_SIZE;
-        int cellZ  = lz / CELL_SIZE;
-        int locX   = lx % CELL_SIZE;  // position within cell (0-3)
-        int locZ   = lz % CELL_SIZE;
+        ColumnType colType = classifyColumn(wx, wz);
 
-        boolean isOpen = open[cellX][cellZ];
-        boolean onEdgeX = (locX == 0);
-        boolean onEdgeZ = (locZ == 0);
+        // Y=0: bedrock void floor
+        chunk.setBlockState(pos.set(lx + chunk.getPos().getMinBlockX(), Y_BEDROCK,
+                lz + chunk.getPos().getMinBlockZ()), BEDROCK_BLK, false);
 
-        // Apakah kolom ini bagian dari ruang terbuka atau koridor?
-        boolean isAir = resolveIsAir(isOpen, onEdgeX, onEdgeZ, locX, locZ, cellX, cellZ, open);
-
-        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos(
-                chunk.getPos().getMinBlockX() + lx, 0,
-                chunk.getPos().getMinBlockZ() + lz);
-
-        // Y=0: bedrock floor
-        chunk.setBlockState(pos.setY(Y_BEDROCK_FLOOR), BEDROCK, false);
-        // Y=1: sandstone sub-floor
+        // Y=1: sub-floor
         chunk.setBlockState(pos.setY(Y_SUBFLOOR), SUBFLOOR_BLK, false);
 
-        if (isAir) {
-            // Lantai
+        if (colType == ColumnType.AIR) {
+            // Floor
             chunk.setBlockState(pos.setY(Y_FLOOR), FLOOR_BLK, false);
-            // Ruang udara
-            for (int y = Y_ROOM_LOW; y <= Y_ROOM_HIGH; y++) {
-                chunk.setBlockState(pos.setY(y), AIR, false);
+            // Open room space
+            for (int y = Y_ROOM_BOTTOM; y <= Y_ROOM_TOP; y++) {
+                chunk.setBlockState(pos.setY(y), AIR_BLK, false);
             }
-            // Langit-langit — normal atau chiseled di titik lampu
-            boolean lamp = isLampPosition(lx, lz, chunkX, chunkZ);
-            chunk.setBlockState(pos.setY(Y_CEILING), lamp ? CEIL_LIGHT : CEIL_NORMAL, false);
-            // Atap — glowstone di titik lampu, bedrock di tempat lain
-            chunk.setBlockState(pos.setY(Y_ROOF), lamp ? GLOWSTONE : BEDROCK, false);
+            // Ceiling tile or froglight strip
+            boolean isFroglight = isFroglightStrip(wx, wz);
+            chunk.setBlockState(pos.setY(Y_CEILING), isFroglight ? CEIL_FROGLIGHT : CEIL_TILE, false);
+            // Above ceiling: glowstone at froglight (hidden light), bedrock elsewhere
+            chunk.setBlockState(pos.setY(Y_ABOVE_CEIL), isFroglight ? GLOWSTONE_BLK : BEDROCK_BLK, false);
+
+        } else if (colType == ColumnType.PILLAR) {
+            // Chiseled sandstone pillar — full height
+            chunk.setBlockState(pos.setY(Y_FLOOR), PILLAR_BLK, false);
+            for (int y = Y_ROOM_BOTTOM; y <= Y_ROOM_TOP; y++) {
+                chunk.setBlockState(pos.setY(y), PILLAR_BLK, false);
+            }
+            chunk.setBlockState(pos.setY(Y_CEILING), PILLAR_BLK, false);
+            chunk.setBlockState(pos.setY(Y_ABOVE_CEIL), BEDROCK_BLK, false);
+
         } else {
-            // Kolom dinding solid
-            BlockState wallMat = wallMaterial(lx, lz, chunkX, chunkZ);
-            chunk.setBlockState(pos.setY(Y_FLOOR),   wallMat, false);
-            for (int y = Y_ROOM_LOW; y <= Y_ROOM_HIGH; y++) {
-                chunk.setBlockState(pos.setY(y), wallMat, false);
+            // WALL — wainscoting trim at bottom 2 blocks, plaster above
+            chunk.setBlockState(pos.setY(Y_FLOOR), WALL_WAINSCOT, false);
+            chunk.setBlockState(pos.setY(Y_ROOM_BOTTOM), WALL_WAINSCOT, false);   // Y=3 wainscoting
+            for (int y = Y_ROOM_BOTTOM + 1; y <= Y_ROOM_TOP; y++) {
+                chunk.setBlockState(pos.setY(y), WALL_PLASTER, false);
             }
-            chunk.setBlockState(pos.setY(Y_CEILING), wallMat, false);
-            chunk.setBlockState(pos.setY(Y_ROOF),    BEDROCK, false);
+            chunk.setBlockState(pos.setY(Y_CEILING), WALL_PLASTER, false);
+            chunk.setBlockState(pos.setY(Y_ABOVE_CEIL), BEDROCK_BLK, false);
         }
     }
 
-    // ─── Air/Wall resolve ─────────────────────────────────────────────────────
+    // ─── Column Classification ─────────────────────────────────────────────────
+
+    private enum ColumnType { AIR, WALL, PILLAR }
 
     /**
-     * Tentukan apakah kolom ini harus jadi udara (ruang terbuka / koridor).
+     * Classify each world column as open air, wall, or pillar.
      *
-     * Aturan:
-     *  - Sel open, bukan tepi → udara (interior ruangan)
-     *  - Sel open, tepi menuju sel open lain → udara (pintu 2-blok lebar)
-     *  - Sel closed, tepat di batas dengan sel open → koridor 2-blok lebar
-     *  - Sisanya → dinding solid
+     * ROOM GRID:
+     *   Rooms are on an 8-block grid. Within each room:
+     *   - The outer 1 block on each side is wall
+     *   - The inner 6×6 is open
+     *
+     * CORRIDORS:
+     *   At room boundaries (every 8 blocks), if a corridor is open between
+     *   two rooms, the central 4 blocks of that boundary are open.
+     *
+     * PILLARS:
+     *   At every intersection of room grid lines (every 8 blocks in both X and Z),
+     *   place a 2×2 pillar block (classic backrooms column look).
      */
-    private boolean resolveIsAir(boolean isOpen, boolean onEdgeX, boolean onEdgeZ,
-                                  int locX, int locZ, int cellX, int cellZ, boolean[][] open) {
-        if (isOpen) {
-            if (!onEdgeX && !onEdgeZ) return true; // interior penuh
+    private ColumnType classifyColumn(int wx, int wz) {
+        // Position within current room cell (0-7)
+        int rx = Math.floorMod(wx, ROOM_SIZE);
+        int rz = Math.floorMod(wz, ROOM_SIZE);
 
-            // Tepi X (locX==0): cek sel sebelah kiri (cellX-1)
-            if (onEdgeX && cellX > 0 && open[cellX - 1][cellZ]) {
-                // Buka 2 blok tengah (locZ 1 dan 2) sebagai pintu
-                if (locZ == 1 || locZ == 2) return true;
+        // Room cell coordinate
+        int cellX = Math.floorDiv(wx, ROOM_SIZE);
+        int cellZ = Math.floorDiv(wz, ROOM_SIZE);
+
+        // ── PILLAR CHECK ──
+        // Pillars go at room grid intersections: rx ∈ {0,1} AND rz ∈ {0,1}
+        // But only where BOTH walls would have been (inner corner style)
+        if (rx <= 1 && rz <= 1) {
+            // This is a corner intersection. Place pillar if it's "inner" corner
+            // (i.e. where two room walls meet, not on outer edge of corridor)
+            return ColumnType.PILLAR;
+        }
+
+        // ── WALL ON X-BOUNDARY ──
+        // rx == 0 or rx == 1 means we're in the 2-block wall on the -X side of cell
+        // Unless a corridor is open here (rz in center range)
+        if (rx <= 1) {
+            // Check corridor between cellX and cellX-1
+            if (isCorridorOpen(cellX, cellZ, false)) {
+                // Corridor is open: rz must be in the open passage zone
+                // Open zone: rz in [2, 5] (center 4 of 8)
+                if (rz >= 2 && rz <= 5) {
+                    return ColumnType.AIR;
+                }
             }
-            // Tepi Z (locZ==0): cek sel sebelah atas (cellZ-1)
-            if (onEdgeZ && cellZ > 0 && open[cellX][cellZ - 1]) {
-                if (locX == 1 || locX == 2) return true;
+            return ColumnType.WALL;
+        }
+
+        if (rz <= 1) {
+            // Wall on -Z boundary of room
+            if (isCorridorOpen(cellX, cellZ, true)) {
+                if (rx >= 2 && rx <= 5) {
+                    return ColumnType.AIR;
+                }
             }
-            // Interior (tidak di tepi sama sekali)
-            if (!onEdgeX && !onEdgeZ) return true;
-            // Open tapi di sudut/tepi tanpa neighbor open → dinding
-            return false;
+            return ColumnType.WALL;
+        }
+
+        // ── INTERIOR OF ROOM ── always open
+        return ColumnType.AIR;
+    }
+
+    // ─── Corridor Logic ───────────────────────────────────────────────────────
+
+    /**
+     * Decide if there's a corridor open between two adjacent room cells.
+     *
+     * @param cellX       current room cell X
+     * @param cellZ       current room cell Z
+     * @param isZEdge     true = checking Z-direction edge (between cellZ and cellZ-1)
+     *                    false = checking X-direction edge (between cellX and cellX-1)
+     */
+    private boolean isCorridorOpen(int cellX, int cellZ, boolean isZEdge) {
+        long seed;
+        if (isZEdge) {
+            // Edge between row cellZ-1 and row cellZ
+            seed = edgeSeed(cellX, cellZ, 1);
         } else {
-            // Sel closed: hanya jadi udara jika di tepi menuju open (koridor)
-            if (onEdgeX && cellX > 0 && open[cellX - 1][cellZ]) {
-                if (locZ == 1 || locZ == 2) return true;
-            }
-            if (onEdgeZ && cellZ > 0 && open[cellX][cellZ - 1]) {
-                if (locX == 1 || locX == 2) return true;
-            }
-            return false;
+            // Edge between column cellX-1 and column cellX
+            seed = edgeSeed(cellX, cellZ, 0);
         }
+        // ~80% corridors open → more interconnected, less claustrophobic
+        return (Math.abs(seed % 10) < 8);
     }
 
-    // ─── Maze generation ──────────────────────────────────────────────────────
+    private long edgeSeed(int cx, int cz, int axis) {
+        return ((long) cx * 1234567891L)
+                ^ ((long) cz * 9876543217L)
+                ^ ((long) axis * 0xABCDEF1234L)
+                ^ 0xB4CKR00MSL3V3LL;
+    }
+
+    // ─── Ceiling Light Strips ─────────────────────────────────────────────────
 
     /**
-     * Buat boolean grid 4×4 untuk chunk ini.
-     * true = sel terbuka (ruang), false = sel tertutup (dinding).
-     * 75% probabilitas terbuka → maze cukup padat tapi bisa dijelajahi.
+     * Froglight strip pattern — simulating fluorescent office lights.
+     *
+     * Pattern: horizontal strips running along Z-axis,
+     * spaced every 6 blocks in X, 2 blocks wide.
+     * This creates the "long tube light" look from the screenshot.
      */
-    private boolean[][] buildMazeGrid(int chunkX, int chunkZ, long seed) {
-        boolean[][] grid = new boolean[GRID_CELLS][GRID_CELLS];
-        for (int cx = 0; cx < GRID_CELLS; cx++) {
-            for (int cz = 0; cz < GRID_CELLS; cz++) {
-                long s = seed ^ ((long) cx * 0x9E3779B97F4A7C15L) ^ ((long) cz * 0x6C62272E07BB0142L);
-                grid[cx][cz] = (Math.abs(s % 100) < 75);
-            }
-        }
-        // Pastikan ada setidaknya satu koridor di tiap sisi chunk (konektivitas)
-        ensureConnectivity(grid);
-        return grid;
-    }
-
-    private void ensureConnectivity(boolean[][] g) {
-        boolean n = false, s = false, w = false, e = false;
-        for (int i = 0; i < GRID_CELLS; i++) {
-            if (g[i][0]) n = true;
-            if (g[i][GRID_CELLS - 1]) s = true;
-            if (g[0][i]) w = true;
-            if (g[GRID_CELLS - 1][i]) e = true;
-        }
-        if (!n) g[1][0] = true;
-        if (!s) g[1][GRID_CELLS - 1] = true;
-        if (!w) g[0][1] = true;
-        if (!e) g[GRID_CELLS - 1][1] = true;
-    }
-
-    // ─── Lamp positions ───────────────────────────────────────────────────────
-
-    /**
-     * Tentukan apakah posisi dunia (wx, wz) ini punya lampu tersembunyi.
-     * Pola: strip horizontal tiap 6 blok X, tiap 4 blok Z.
-     * Mensimulasikan "fluorescent strip lights" khas backrooms.
-     */
-    private boolean isLampPosition(int lx, int lz, int chunkX, int chunkZ) {
-        int wx = chunkX * 16 + lx;
-        int wz = chunkZ * 16 + lz;
+    private boolean isFroglightStrip(int wx, int wz) {
         int mx = Math.floorMod(wx, 6);
-        int mz = Math.floorMod(wz, 4);
-        return (mz == 2) && (mx >= 1 && mx <= 4);
+        // Strip occupies mx = 2 and mx = 3 (2 blocks wide)
+        return (mx == 2 || mx == 3);
     }
 
-    /**
-     * Material dinding: alternasi Birch Planks dan Sandstone.
-     * Birch Planks = panel kayu (warna terang kekuningan).
-     * Sandstone    = plester/dinding kapur (kuning).
-     * Alternasi tiap 2 blok → tampak seperti panel dinding backrooms.
-     */
-    private BlockState wallMaterial(int lx, int lz, int chunkX, int chunkZ) {
-        int wx = chunkX * 16 + lx;
-        // Alternasi per-2-blok di arah X
-        return (Math.floorMod(wx, 4) < 2) ? WALL_A : WALL_B;
-    }
-
-    // ─── Seed ────────────────────────────────────────────────────────────────
-
-    private long chunkSeed(int cx, int cz) {
-        return ((long) cx * 341873128712L) ^ ((long) cz * 132897987541L) ^ 0xDEADCAFEBEEFL;
-    }
-
-    // ─── Required abstract overrides ─────────────────────────────────────────
+    // ─── Required abstract overrides ──────────────────────────────────────────
 
     @Override
     public void applyCarvers(WorldGenRegion region, long seed, RandomState randomState,
                              BiomeManager biomeManager, StructureManager structureManager,
                              ChunkAccess chunk, GenerationStep.Carving step) {
-        // Tidak ada gua di backrooms
+        // No caves in the backrooms
     }
 
     @Override
     public void buildSurface(WorldGenRegion region, StructureManager structureManager,
                              RandomState randomState, ChunkAccess chunk) {
-        // Sudah di-handle di fillFromNoise
+        // Handled in fillFromNoise
     }
 
     @Override
     public void spawnOriginalMobs(WorldGenRegion region) {
-        // Backrooms awalnya sepi — tidak ada mob spawn
+        // Backrooms starts empty
     }
 
     @Override
@@ -301,31 +333,26 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
         return CompletableFuture.completedFuture(chunk);
     }
 
-    /** Diperlukan di 1.21.1 — menampilkan info di F3 debug screen. */
     @Override
-    public void addDebugScreenInfo(List<String> info, RandomState randomState, BlockPos pos) {
-        info.add("Backrooms Level 0 | " + pos.toShortString());
+    public void addDebugScreenInfo(List<String> info, RandomState state, BlockPos pos) {
+        info.add("Backrooms Level 0 — The Lobby | " + pos.toShortString());
     }
 
     @Override
-    public int getSeaLevel() {
-        return -1;
-    }
+    public int getSeaLevel() { return -1; }
 
     @Override
-    public int getMinY() {
-        return Y_BEDROCK_FLOOR;
-    }
+    public int getMinY() { return Y_BEDROCK; }
 
     @Override
-    public int getBaseHeight(int x, int z, Heightmap.Types heightmapType,
-                             LevelHeightAccessor level, RandomState randomState) {
+    public int getBaseHeight(int x, int z, Heightmap.Types type,
+                             LevelHeightAccessor level, RandomState state) {
         return Y_CEILING;
     }
 
     @Override
     public NoiseColumn getBaseColumn(int x, int z, LevelHeightAccessor level,
-                                     RandomState randomState) {
-        return new NoiseColumn(Y_BEDROCK_FLOOR, new BlockState[0]);
+                                     RandomState state) {
+        return new NoiseColumn(Y_BEDROCK, new BlockState[0]);
     }
 }
