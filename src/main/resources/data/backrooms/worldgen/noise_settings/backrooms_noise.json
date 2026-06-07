@@ -12,8 +12,8 @@
   },
   "noise": {
     "height": 128,
-    "vertical_size": 2,
-    "horizontal_size": 1,
+    "size_vertical": 2,
+    "size_horizontal": 1,
     "min_y": -64
   },
   "noise_router": {
@@ -38,11 +38,11 @@
             "type": "minecraft:y_clamped_gradient",
             "from_y": -64,
             "to_y": 8,
-            "from_value": 1,
-            "to_value": -1
+            "from_value": 1.0,
+            "to_value": -1.0
           },
-          "min": -1,
-          "max": 1
+          "min": -1.0,
+          "max": 1.0
         }
       }
     },

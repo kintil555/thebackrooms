@@ -18,7 +18,7 @@
   "bed_works": false,
   "respawn_anchor_works": false,
   "has_raids": false,
-  "logical_height": 64,
+  "logical_height": 128,
   "min_y": -64,
   "height": 128,
   "infiniburn": "#minecraft:infiniburn_overworld",
