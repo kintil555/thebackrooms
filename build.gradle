@@ -1,9 +1,8 @@
 plugins {
     id 'eclipse'
     id 'idea'
-    id 'java'
     id 'maven-publish'
-    id 'net.minecraftforge.gradle' version '[7.0,8.0)'
+    id 'net.minecraftforge.gradle' version '[6.0,6.2)'
 }
 
 version = '1.0.0'
@@ -19,21 +18,43 @@ println "Java: ${System.getProperty 'java.version'}, JVM: ${System.getProperty '
 
 minecraft {
     mappings channel: 'official', version: '1.21.1'
+
+    runs {
+        client {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+            mods {
+                backrooms { source sourceSets.main }
+            }
+        }
+        server {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+            args '--nogui'
+            mods {
+                backrooms { source sourceSets.main }
+            }
+        }
+    }
 }
 
 sourceSets.main.resources { srcDir 'src/generated/resources' }
 
 repositories {
-    maven fg.forgeMaven
-    maven fg.minecraftLibsMaven
+    maven {
+        name = 'MinecraftForge'
+        url = 'https://maven.minecraftforge.net/'
+    }
     mavenCentral()
 }
 
 dependencies {
-    implementation minecraft.dependency('net.minecraftforge:forge:1.21.1-52.1.0')
+    minecraft 'net.minecraftforge:forge:1.21.1-52.1.0'
 }
 
-tasks.named('jar', Jar).configure {
+jar {
     manifest {
         attributes([
                 "Specification-Title"     : "backrooms",
@@ -49,7 +70,7 @@ tasks.named('jar', Jar).configure {
 
 publishing {
     publications {
-        register('mavenJava', MavenPublication) {
+        mavenJava(MavenPublication) {
             artifact jar
         }
     }
