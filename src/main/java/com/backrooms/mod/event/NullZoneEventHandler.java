@@ -19,6 +19,7 @@ import net.minecraftforge.event.level.ChunkEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
+import net.minecraft.server.level.DimensionTransition;
 
 import java.util.*;
 
@@ -225,8 +226,17 @@ public class NullZoneEventHandler {
         int spawnY = findSafeY(backroomsLevel, spawnX, spawnZ);
 
         // Do the actual dimension teleport
-        player.changeDimension(backroomsLevel,
-                new BackroomsTeleporter(spawnX, spawnY, spawnZ));
+        // In 1.21.1+, changeDimension takes a DimensionTransition; ITeleporter was removed
+        BackroomsTeleporter.ensureSafeRoom(backroomsLevel, spawnX, spawnY, spawnZ);
+        DimensionTransition transition = new DimensionTransition(
+                backroomsLevel,
+                new net.minecraft.world.phys.Vec3(spawnX + 0.5, spawnY, spawnZ + 0.5),
+                net.minecraft.world.phys.Vec3.ZERO,
+                player.getYRot(),
+                player.getXRot(),
+                DimensionTransition.DO_NOTHING
+        );
+        player.changeDimension(transition);
 
         BackroomsMod.LOGGER.info("[Backrooms] Player {} noclipped into The Backrooms at {},{},{}",
                 player.getName().getString(), spawnX, spawnY, spawnZ);

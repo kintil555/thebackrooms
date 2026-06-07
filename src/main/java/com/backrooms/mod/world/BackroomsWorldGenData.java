@@ -14,13 +14,13 @@ import net.minecraft.resources.ResourceLocation;
 public class BackroomsWorldGenData {
 
     public static final ResourceLocation BACKROOMS_DIMENSION =
-            new ResourceLocation(BackroomsMod.MOD_ID, "backrooms");
+            ResourceLocation.fromNamespaceAndPath(BackroomsMod.MOD_ID, "backrooms");
 
     public static final ResourceLocation BACKROOMS_BIOME =
-            new ResourceLocation(BackroomsMod.MOD_ID, "backrooms_biome");
+            ResourceLocation.fromNamespaceAndPath(BackroomsMod.MOD_ID, "backrooms_biome");
 
     public static final ResourceLocation BACKROOMS_NOISE_SETTINGS =
-            new ResourceLocation(BackroomsMod.MOD_ID, "backrooms_noise");
+            ResourceLocation.fromNamespaceAndPath(BackroomsMod.MOD_ID, "backrooms_noise");
 
     /** Ceiling height of the Backrooms rooms (in blocks above floor). */
     public static final int ROOM_CEILING_HEIGHT = 5;

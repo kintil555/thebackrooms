@@ -17,12 +17,12 @@ public class ModDimensions {
     /** The dimension key used to reference the Backrooms world level. */
     public static final ResourceKey<Level> BACKROOMS_LEVEL =
             ResourceKey.create(Registries.DIMENSION,
-                    new ResourceLocation(BackroomsMod.MOD_ID, "backrooms"));
+                    ResourceLocation.fromNamespaceAndPath(BackroomsMod.MOD_ID, "backrooms"));
 
     /** The dimension type key. */
     public static final ResourceKey<DimensionType> BACKROOMS_DIM_TYPE =
             ResourceKey.create(Registries.DIMENSION_TYPE,
-                    new ResourceLocation(BackroomsMod.MOD_ID, "backrooms_type"));
+                    ResourceLocation.fromNamespaceAndPath(BackroomsMod.MOD_ID, "backrooms_type"));
 
     public static void init() {
         // Keys are created statically — nothing else needed at this stage.
