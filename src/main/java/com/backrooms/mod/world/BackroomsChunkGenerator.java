@@ -142,32 +142,32 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
         int zone = getZone(wx, wz);
 
         if (zone == ZONE_VOID) {
-            fillVoidColumn(chunk, pos, lx, lz, wx, wz);
+            fillVoidColumn(chunk, pos, wx, wz);
             return;
         }
 
         boolean solid = isSolid(wx, wz, zone);
 
         // Lantai & atap selalu ada
-        set(chunk, pos, lx, Y_BASE, lz, BLK_BEDROCK);
-        set(chunk, pos, lx, Y_ROOF, lz, BLK_BEDROCK);
+        set(chunk, pos, wx, Y_BASE, wz, BLK_BEDROCK);
+        set(chunk, pos, wx, Y_ROOF, wz, BLK_BEDROCK);
 
         if (solid) {
             // ── DINDING / PILAR ────────────────────────────────────────────
-            set(chunk, pos, lx, Y_CARPET, lz, BLK_BASE);
-            set(chunk, pos, lx, Y_BASE2,  lz, BLK_BASE);
-            set(chunk, pos, lx, Y_WALL_1, lz, BLK_WALL);
-            set(chunk, pos, lx, Y_WALL_2, lz, BLK_WALL);
-            set(chunk, pos, lx, Y_WALL_3, lz, BLK_WALL);
-            set(chunk, pos, lx, Y_CEIL,   lz, BLK_WALL);
+            set(chunk, pos, wx, Y_CARPET, wz, BLK_BASE);
+            set(chunk, pos, wx, Y_BASE2,  wz, BLK_BASE);
+            set(chunk, pos, wx, Y_WALL_1, wz, BLK_WALL);
+            set(chunk, pos, wx, Y_WALL_2, wz, BLK_WALL);
+            set(chunk, pos, wx, Y_WALL_3, wz, BLK_WALL);
+            set(chunk, pos, wx, Y_CEIL,   wz, BLK_WALL);
         } else {
             // ── RUANGAN TERBUKA ────────────────────────────────────────────
-            set(chunk, pos, lx, Y_CARPET, lz, BLK_CARPET);
-            set(chunk, pos, lx, Y_BASE2,  lz, BLK_AIR);
-            set(chunk, pos, lx, Y_WALL_1, lz, BLK_AIR);
-            set(chunk, pos, lx, Y_WALL_2, lz, BLK_AIR);
-            set(chunk, pos, lx, Y_WALL_3, lz, BLK_AIR);
-            set(chunk, pos, lx, Y_CEIL,   lz, isLamp(wx, wz) ? BLK_LAMP : BLK_CEIL);
+            set(chunk, pos, wx, Y_CARPET, wz, BLK_CARPET);
+            set(chunk, pos, wx, Y_BASE2,  wz, BLK_AIR);
+            set(chunk, pos, wx, Y_WALL_1, wz, BLK_AIR);
+            set(chunk, pos, wx, Y_WALL_2, wz, BLK_AIR);
+            set(chunk, pos, wx, Y_WALL_3, wz, BLK_AIR);
+            set(chunk, pos, wx, Y_CEIL,   wz, isLamp(wx, wz) ? BLK_LAMP : BLK_CEIL);
         }
     }
 
@@ -193,38 +193,32 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
      *     Y=41–63   Bedrock
      */
     private void fillVoidColumn(ChunkAccess chunk, BlockPos.MutableBlockPos pos,
-                                int lx, int lz, int wx, int wz) {
-        // Void room pakai grid 8 blok (lebih luas dari OFFICE, lebih dramatis)
-        // 75% pintu terbuka → ruangan besar dengan tembok sporadis
+                                int wx, int wz) {
         boolean solid = isSolidVoid(wx, wz);
 
         // Lantai bedrock selalu ada
-        set(chunk, pos, lx, Y_BASE, lz, BLK_BEDROCK);
+        set(chunk, pos, wx, Y_BASE, wz, BLK_BEDROCK);
 
         if (solid) {
             // ── DINDING PENUH 40 BLOK ─────────────────────────────────────
-            set(chunk, pos, lx, Y_CARPET, lz, BLK_BASE);   // baseboard
-            // Y=2 s/d Y=39: dinding log penuh
+            set(chunk, pos, wx, Y_CARPET, wz, BLK_BASE);
             for (int y = Y_BASE2; y < Y_VOID_CEIL; y++) {
-                set(chunk, pos, lx, y, lz, BLK_WALL);
+                set(chunk, pos, wx, y, wz, BLK_WALL);
             }
-            // Ceiling solid di Y=40
-            set(chunk, pos, lx, Y_VOID_CEIL, lz, BLK_CEIL);
+            set(chunk, pos, wx, Y_VOID_CEIL, wz, BLK_CEIL);
         } else {
             // ── INTERIOR VOID — udara penuh 38 blok ──────────────────────
-            set(chunk, pos, lx, Y_CARPET, lz, BLK_CARPET);
-            // Y=2 s/d Y=39: kosong
+            set(chunk, pos, wx, Y_CARPET, wz, BLK_CARPET);
             for (int y = Y_BASE2; y < Y_VOID_CEIL; y++) {
-                set(chunk, pos, lx, y, lz, BLK_AIR);
+                set(chunk, pos, wx, y, wz, BLK_AIR);
             }
-            // Ceiling void di Y=40 — froglight jarang (tiap 8 blok, dramatic)
             boolean voidLamp = (Math.floorMod(wx, 8) == 0) && (Math.floorMod(wz, 8) == 0);
-            set(chunk, pos, lx, Y_VOID_CEIL, lz, voidLamp ? BLK_LAMP : BLK_CEIL);
+            set(chunk, pos, wx, Y_VOID_CEIL, wz, voidLamp ? BLK_LAMP : BLK_CEIL);
         }
 
-        // Y=41 ke atas → bedrock solid (dalam batas height=64)
+        // Y=41 ke atas → bedrock solid
         for (int y = Y_VOID_ROOF; y < 64; y++) {
-            set(chunk, pos, lx, y, lz, BLK_BEDROCK);
+            set(chunk, pos, wx, y, wz, BLK_BEDROCK);
         }
     }
 
@@ -417,8 +411,8 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
     }
 
     private void set(ChunkAccess c, BlockPos.MutableBlockPos p,
-                     int lx, int y, int lz, BlockState s) {
-        c.setBlockState(p.set(lx, y, lz), s, false);
+                     int wx, int y, int wz, BlockState s) {
+        c.setBlockState(p.set(wx, y, wz), s, false);
     }
 
     // ══════════════════════════════════════════════════════════════════════════
