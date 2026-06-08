@@ -10,26 +10,16 @@ import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.portal.DimensionTransition;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
-/**
- * Ghost Wall Block — block cadangan untuk mekanisme null zone.
- *
- * CATATAN: Block ini TIDAK lagi ditempatkan di terrain overworld.
- * (Menempatkan block noOcclusion merusak face culling → lubang hitam di terrain.)
- *
- * Efek noclip sekarang diimplementasi via player.noPhysics di NullZoneEventHandler:
- * Terrain asli tetap utuh, player yang "menembus" block menggunakan noPhysics.
- *
- * Class ini dipertahankan untuk:
- * 1. triggerBackroomsTransition() — logic teleport ke backrooms
- * 2. Kemungkinan penggunaan manual di masa depan (creative mode, dll)
- */
 public class GhostWallBlock extends Block {
 
-    private static final int BACKROOMS_FLOOR_Y = 1;
+    // Y=1 = lantai karpet. Player spawn berdiri di atasnya → Y=2.0
+    private static final int Y_FLOOR = 1;
+    private static final double Y_SPAWN = 2.0; // tepat di atas karpet
 
     public GhostWallBlock(Properties properties) {
         super(properties);
@@ -52,14 +42,12 @@ public class GhostWallBlock extends Block {
         return true;
     }
 
-    // ─── Teleport logic ───────────────────────────────────────────────────────
-
     public static void triggerBackroomsTransition(ServerPlayer player, ServerLevel serverLevel) {
         if (player.isOnPortalCooldown()) return;
 
         ServerLevel backroomsLevel = serverLevel.getServer().getLevel(ModDimensions.BACKROOMS_LEVEL);
         if (backroomsLevel == null) {
-            BackroomsMod.LOGGER.error("[Backrooms] Backrooms dimension not found! Check dimension JSON.");
+            BackroomsMod.LOGGER.error("[Backrooms] Backrooms dimension not found!");
             return;
         }
 
@@ -68,12 +56,13 @@ public class GhostWallBlock extends Block {
         int spawnX = player.getBlockX();
         int spawnZ = player.getBlockZ();
 
-        BackroomsTeleporter.ensureSafeRoom(backroomsLevel, spawnX, BACKROOMS_FLOOR_Y, spawnZ);
+        // Cek/fix chunk spawn — hanya bersihkan jika ada blok solid di area udara
+        BackroomsTeleporter.ensureSafeRoom(backroomsLevel, spawnX, Y_FLOOR, spawnZ);
 
         DimensionTransition transition = new DimensionTransition(
                 backroomsLevel,
-                new net.minecraft.world.phys.Vec3(spawnX + 0.5, BACKROOMS_FLOOR_Y + 1, spawnZ + 0.5),
-                net.minecraft.world.phys.Vec3.ZERO,
+                new Vec3(spawnX + 0.5, Y_SPAWN, spawnZ + 0.5), // Y=2.0 tepat di atas karpet
+                Vec3.ZERO,
                 player.getYRot(),
                 player.getXRot(),
                 DimensionTransition.DO_NOTHING
@@ -87,7 +76,7 @@ public class GhostWallBlock extends Block {
         player.sendSystemMessage(
                 net.minecraft.network.chat.Component.literal("§7§oGod save you if you hear something wandering nearby..."));
 
-        BackroomsMod.LOGGER.info("[Backrooms] Player {} noclipped → Backrooms at X={} Z={}",
+        BackroomsMod.LOGGER.info("[Backrooms] {} noclipped → Backrooms @ X={} Z={}",
                 player.getName().getString(), spawnX, spawnZ);
     }
 }

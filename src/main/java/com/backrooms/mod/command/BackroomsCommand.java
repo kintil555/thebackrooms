@@ -34,7 +34,8 @@ import java.util.Collection;
 public class BackroomsCommand {
 
     /** Y spawn default di Backrooms (lantai level 0). */
-    private static final int DEFAULT_FLOOR_Y = 2;
+    private static final int Y_FLOOR = 1;
+    private static final double Y_SPAWN = 2.0;
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(
@@ -121,16 +122,16 @@ public class BackroomsCommand {
 
         // Tentukan koordinat tujuan
         int destX = (x != null) ? x : player.getBlockX();
-        int destY = (y != null) ? y : DEFAULT_FLOOR_Y;
+        int destY = (y != null) ? y : (int) Y_SPAWN;
         int destZ = (z != null) ? z : player.getBlockZ();
 
         // Pastikan area landing aman
-        BackroomsTeleporter.ensureSafeRoom(server, destX, destY, destZ);
+        BackroomsTeleporter.ensureSafeRoom(server, destX, 1, destZ);
 
         // Buat transition
         DimensionTransition transition = new DimensionTransition(
                 server,
-                new Vec3(destX + 0.5, destY, destZ + 0.5),
+                new Vec3(destX + 0.5, Y_SPAWN, destZ + 0.5),
                 Vec3.ZERO,
                 player.getYRot(),
                 player.getXRot(),
@@ -208,7 +209,7 @@ public class BackroomsCommand {
 
         DimensionTransition transition = new DimensionTransition(
                 overworld,
-                new Vec3(destX + 0.5, destY, destZ + 0.5),
+                new Vec3(destX + 0.5, Y_SPAWN, destZ + 0.5),
                 Vec3.ZERO,
                 player.getYRot(),
                 player.getXRot(),
