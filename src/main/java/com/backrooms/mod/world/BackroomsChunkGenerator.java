@@ -172,29 +172,79 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
     }
 
     /**
-     * ZONE_VOID: ruangan masif tanpa partisi, langit-langit Y=40.
-     * Tidak ada dinding internal sama sekali — open lebar.
-     * Froglight jarang di ceiling karena ruangannya sangat tinggi.
+     * ZONE_VOID: ruangan masif — dinding tetap ada (pakai grid OFFICE 6 blok)
+     * tapi tingginya penuh dari Y=0 sampai Y=40. Interior yang tidak solid
+     * = udara penuh 40 blok. Ini yang menciptakan ruangan "cathedral" yang
+     * super tinggi dengan dinding normal di pinggirnya.
+     *
+     * Layout kolom:
+     *   Solid (dinding/pilar):
+     *     Y=0       Bedrock
+     *     Y=1       Cut Sandstone (baseboard)
+     *     Y=2–39    Stripped Oak Log (dinding penuh)
+     *     Y=40      Smooth Stone (ceiling void)
+     *     Y=41–63   Bedrock
+     *
+     *   Non-solid (interior):
+     *     Y=0       Bedrock (lantai)
+     *     Y=1       Brown Wool (karpet)
+     *     Y=2–39    AIR (ruang terbuka 38 blok tinggi)
+     *     Y=40      Smooth Stone / Froglight (ceiling)
+     *     Y=41–63   Bedrock
      */
     private void fillVoidColumn(ChunkAccess chunk, BlockPos.MutableBlockPos pos,
                                 int lx, int lz, int wx, int wz) {
-        // Lantai
-        set(chunk, pos, lx, Y_BASE,   lz, BLK_BEDROCK);
-        set(chunk, pos, lx, Y_CARPET, lz, BLK_CARPET);
+        // Void room pakai grid 8 blok (lebih luas dari OFFICE, lebih dramatis)
+        // 75% pintu terbuka → ruangan besar dengan tembok sporadis
+        boolean solid = isSolidVoid(wx, wz);
 
-        // Void — sepenuhnya udara dari Y=2 sampai Y=39
-        for (int y = Y_BASE2; y < Y_VOID_CEIL; y++) {
-            set(chunk, pos, lx, y, lz, BLK_AIR);
+        // Lantai bedrock selalu ada
+        set(chunk, pos, lx, Y_BASE, lz, BLK_BEDROCK);
+
+        if (solid) {
+            // ── DINDING PENUH 40 BLOK ─────────────────────────────────────
+            set(chunk, pos, lx, Y_CARPET, lz, BLK_BASE);   // baseboard
+            // Y=2 s/d Y=39: dinding log penuh
+            for (int y = Y_BASE2; y < Y_VOID_CEIL; y++) {
+                set(chunk, pos, lx, y, lz, BLK_WALL);
+            }
+            // Ceiling solid di Y=40
+            set(chunk, pos, lx, Y_VOID_CEIL, lz, BLK_CEIL);
+        } else {
+            // ── INTERIOR VOID — udara penuh 38 blok ──────────────────────
+            set(chunk, pos, lx, Y_CARPET, lz, BLK_CARPET);
+            // Y=2 s/d Y=39: kosong
+            for (int y = Y_BASE2; y < Y_VOID_CEIL; y++) {
+                set(chunk, pos, lx, y, lz, BLK_AIR);
+            }
+            // Ceiling void di Y=40 — froglight jarang (tiap 8 blok, dramatic)
+            boolean voidLamp = (Math.floorMod(wx, 8) == 0) && (Math.floorMod(wz, 8) == 0);
+            set(chunk, pos, lx, Y_VOID_CEIL, lz, voidLamp ? BLK_LAMP : BLK_CEIL);
         }
 
-        // Ceiling void di Y=40 — froglight tiap 6 blok (jarang, dramatic)
-        boolean voidLamp = (Math.floorMod(wx, 6) == 0) && (Math.floorMod(wz, 6) == 0);
-        set(chunk, pos, lx, Y_VOID_CEIL, lz, voidLamp ? BLK_LAMP : BLK_CEIL);
-
-        // Sisa Y=41 ke atas → bedrock (dalam batas height=64)
+        // Y=41 ke atas → bedrock solid (dalam batas height=64)
         for (int y = Y_VOID_ROOF; y < 64; y++) {
             set(chunk, pos, lx, y, lz, BLK_BEDROCK);
         }
+    }
+
+    /**
+     * Solid check khusus ZONE_VOID — grid lebih besar (8 blok) dan banyak pintu
+     * agar ruangannya luas tapi tetap ada tembok pembatas.
+     */
+    private boolean isSolidVoid(int wx, int wz) {
+        final int G = 8;
+        int gx = Math.floorMod(wx, G);
+        int gz = Math.floorMod(wz, G);
+        boolean onX = (gx == 0);
+        boolean onZ = (gz == 0);
+        if (!onX && !onZ) return false;
+        if (onX && onZ) return true; // pilar persimpangan
+        int cellX = Math.floorDiv(wx, G);
+        int cellZ = Math.floorDiv(wz, G);
+        // 75% pintu terbuka → ruangan sangat luas, tembok hanya di beberapa sisi
+        if (onX) return !isDoor(cellX, cellZ, false, gz, G, 0.75);
+        return      !isDoor(cellX, cellZ, true,  gx, G, 0.75);
     }
 
     // ══════════════════════════════════════════════════════════════════════════
