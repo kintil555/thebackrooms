@@ -34,7 +34,7 @@ import java.util.Collection;
 public class BackroomsCommand {
 
     /** Y spawn default di Backrooms (lantai level 0). */
-    private static final int DEFAULT_FLOOR_Y = 3;
+    private static final int DEFAULT_FLOOR_Y = 2;
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(

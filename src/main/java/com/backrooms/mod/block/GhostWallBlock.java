@@ -29,7 +29,7 @@ import net.minecraft.world.phys.shapes.VoxelShape;
  */
 public class GhostWallBlock extends Block {
 
-    private static final int BACKROOMS_FLOOR_Y = 3;
+    private static final int BACKROOMS_FLOOR_Y = 1;
 
     public GhostWallBlock(Properties properties) {
         super(properties);
@@ -72,7 +72,7 @@ public class GhostWallBlock extends Block {
 
         DimensionTransition transition = new DimensionTransition(
                 backroomsLevel,
-                new net.minecraft.world.phys.Vec3(spawnX + 0.5, BACKROOMS_FLOOR_Y, spawnZ + 0.5),
+                new net.minecraft.world.phys.Vec3(spawnX + 0.5, BACKROOMS_FLOOR_Y + 1, spawnZ + 0.5),
                 net.minecraft.world.phys.Vec3.ZERO,
                 player.getYRot(),
                 player.getXRot(),
