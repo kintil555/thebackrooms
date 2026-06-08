@@ -51,8 +51,8 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
     private static final int Y_WALL_2        = 4;
     private static final int Y_WALL_3        = 5;
     private static final int Y_CEILING       = 6;
-    private static final int Y_LIGHT         = 7;
-    private static final int Y_ROOF          = 8;
+    
+    private static final int Y_ROOF          = 7;  // Bedrock atap
 
     // ─── Block states ─────────────────────────────────────────────────────────
     private static final BlockState BLK_BEDROCK   = Blocks.BEDROCK.defaultBlockState();
@@ -115,24 +115,22 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
 
         if (!open || pillar) {
             // Dinding / pilar solid
-            set(chunk, pos, lx, Y_CARPET,   lz, BLK_BASE);
+            set(chunk, pos, lx, Y_CARPET,    lz, BLK_BASE);
             set(chunk, pos, lx, Y_BASEBOARD, lz, BLK_BASE);
-            set(chunk, pos, lx, Y_WALL_1,   lz, BLK_WALL);
-            set(chunk, pos, lx, Y_WALL_2,   lz, BLK_WALL);
-            set(chunk, pos, lx, Y_WALL_3,   lz, BLK_WALL);
-            set(chunk, pos, lx, Y_CEILING,  lz, BLK_WALL);
-            set(chunk, pos, lx, Y_LIGHT,    lz, BLK_BEDROCK);
+            set(chunk, pos, lx, Y_WALL_1,    lz, BLK_WALL);
+            set(chunk, pos, lx, Y_WALL_2,    lz, BLK_WALL);
+            set(chunk, pos, lx, Y_WALL_3,    lz, BLK_WALL);
+            set(chunk, pos, lx, Y_CEILING,   lz, BLK_WALL);    // dinding nyambung ke ceiling
         } else {
             // Ruangan terbuka
-            set(chunk, pos, lx, Y_CARPET,   lz, BLK_CARPET);
+            set(chunk, pos, lx, Y_CARPET,    lz, BLK_CARPET);
             set(chunk, pos, lx, Y_BASEBOARD, lz, BLK_AIR);
-            set(chunk, pos, lx, Y_WALL_1,   lz, BLK_AIR);
-            set(chunk, pos, lx, Y_WALL_2,   lz, BLK_AIR);
-            set(chunk, pos, lx, Y_WALL_3,   lz, BLK_AIR);
-            set(chunk, pos, lx, Y_CEILING,  lz, BLK_CEILING);
-            // Frog Light tiap 3 blok (grid X%3==0 && Z%3==0)
-            set(chunk, pos, lx, Y_LIGHT, lz,
-                isLamp(wx, wz) ? BLK_LIGHT : BLK_BEDROCK);
+            set(chunk, pos, lx, Y_WALL_1,    lz, BLK_AIR);
+            set(chunk, pos, lx, Y_WALL_2,    lz, BLK_AIR);
+            set(chunk, pos, lx, Y_WALL_3,    lz, BLK_AIR);
+            // Ceiling = Froglight di spot lampu, Smooth Stone di tempat lain
+            set(chunk, pos, lx, Y_CEILING,   lz,
+                isLamp(wx, wz) ? BLK_LIGHT : BLK_CEILING);
         }
     }
 
