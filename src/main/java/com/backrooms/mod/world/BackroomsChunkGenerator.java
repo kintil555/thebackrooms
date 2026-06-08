@@ -81,8 +81,9 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
     private static final int ZONE_OPEN     = 2;
     private static final int ZONE_VOID     = 3;
     private static final int ZONE_COMPLEX  = 4;
+    private static final int ZONE_PITFALLS = 5;
 
-    private static final String[] ZONE_NAMES = {"CORRIDOR", "OFFICE", "OPEN", "VOID", "COMPLEX"};
+    private static final String[] ZONE_NAMES = {"CORRIDOR", "OFFICE", "OPEN", "VOID", "COMPLEX", "PITFALLS"};
 
     /** Ukuran makro-region dalam blok. Zone dipilih satu per region ini. */
     private static final int REGION_SIZE = 48;
@@ -125,12 +126,16 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
         int rx = Math.floorDiv(wx, REGION_SIZE);
         int rz = Math.floorDiv(wz, REGION_SIZE);
         long s = regionSeed(rx, rz);
-        int r = (int) Math.abs(s % 10);
-        // Distribusi: VOID=10%, CORRIDOR=20%, COMPLEX=20%, OPEN=25%, OFFICE=25%
-        if (r < 1) return ZONE_VOID;
-        if (r < 3) return ZONE_CORRIDOR;
-        if (r < 5) return ZONE_COMPLEX;
-        if (r < 8) return ZONE_OPEN;
+        int r = (int) Math.abs(s % 20);
+        // Distribusi (20 bucket):
+        //   VOID=10% (0-1), PITFALLS=10% (2-3),
+        //   CORRIDOR=15% (4-6), COMPLEX=15% (7-9),
+        //   OPEN=25% (10-14), OFFICE=25% (15-19)
+        if (r < 2)  return ZONE_VOID;
+        if (r < 4)  return ZONE_PITFALLS;
+        if (r < 7)  return ZONE_CORRIDOR;
+        if (r < 10) return ZONE_COMPLEX;
+        if (r < 15) return ZONE_OPEN;
         return ZONE_OFFICE;
     }
 
@@ -144,6 +149,11 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
 
         if (zone == ZONE_VOID) {
             fillVoidColumn(chunk, pos, wx, wz);
+            return;
+        }
+
+        if (zone == ZONE_PITFALLS) {
+            fillPitfallsColumn(chunk, pos, wx, wz);
             return;
         }
 
@@ -213,12 +223,119 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
     /** Versi getZone yang menerima indeks region langsung (bukan koordinat world). */
     private int getZoneByRegion(int rx, int rz) {
         long s = regionSeed(rx, rz);
-        int r = (int) Math.abs(s % 10);
-        if (r < 1) return ZONE_VOID;
-        if (r < 3) return ZONE_CORRIDOR;
-        if (r < 5) return ZONE_COMPLEX;
-        if (r < 8) return ZONE_OPEN;
+        int r = (int) Math.abs(s % 20);
+        if (r < 2)  return ZONE_VOID;
+        if (r < 4)  return ZONE_PITFALLS;
+        if (r < 7)  return ZONE_CORRIDOR;
+        if (r < 10) return ZONE_COMPLEX;
+        if (r < 15) return ZONE_OPEN;
         return ZONE_OFFICE;
+    }
+
+    /**
+     * ZONE_PITFALLS — "Room 14D" dari Kane Pixels Backrooms (Pitfalls, 1990).
+     *
+     * Berdasarkan riset: ruangan dengan pola ~5×7 lubang persegi di lantai,
+     * karpet turun di semua sisi lubang, lubang berkelompok dalam grid, ada
+     * dinding OFFICE normal di tepian ruangan, langit-langit fluorescent.
+     *
+     * Layout kolom:
+     *   Non-lubang normal:
+     *     Y=0  Bedrock
+     *     Y=1  Brown Wool (karpet)
+     *     Y=2  Cut Sandstone (baseboard)
+     *     Y=3–5 Stripped Oak Log (dinding, hanya di tepi ruangan)
+     *     Y=6  Smooth Stone / Froglight (ceiling)
+     *     Y=7  Bedrock (atap)
+     *
+     *   Lubang (pitfall):
+     *     Y=0  Bedrock
+     *     Y=1–5 AIR (lubang terbuka, bisa jatuh)
+     *     Y=6  Smooth Stone / Froglight (ceiling — tetap ada di atas)
+     *     Y=7  Bedrock (atap)
+     *
+     * Cluster lubang: dipilih per "cluster-region" 16×16 blok.
+     * Di dalam cluster region, lubang digenerate dalam pola grid 3×3
+     * (tiap 3 blok ada lubang 2×2) dengan ~60% chance per cluster aktif.
+     * Ini menciptakan pola seperti foto referensi — grid lubang persegi
+     * yang tersebar di lantai ruangan luas.
+     */
+    private void fillPitfallsColumn(ChunkAccess chunk, BlockPos.MutableBlockPos pos,
+                                    int wx, int wz) {
+        boolean wall   = isSolidOffice(wx, wz);   // dinding luar ruangan
+        boolean pit    = !wall && isPitfall(wx, wz); // lubang di area terbuka
+
+        set(chunk, pos, wx, Y_BASE, wz, BLK_BEDROCK);
+        set(chunk, pos, wx, Y_ROOF, wz, BLK_BEDROCK);
+
+        if (wall) {
+            // ── DINDING OFFICE BIASA ──────────────────────────────────────
+            set(chunk, pos, wx, Y_CARPET, wz, BLK_BASE);
+            set(chunk, pos, wx, Y_BASE2,  wz, BLK_BASE);
+            set(chunk, pos, wx, Y_WALL_1, wz, BLK_WALL);
+            set(chunk, pos, wx, Y_WALL_2, wz, BLK_WALL);
+            set(chunk, pos, wx, Y_WALL_3, wz, BLK_WALL);
+            set(chunk, pos, wx, Y_CEIL,   wz, BLK_WALL);
+        } else if (pit) {
+            // ── PITFALL — lubang terbuka, langit-langit tetap ada ─────────
+            // Y=1..5 = udara (bisa jatuh)
+            set(chunk, pos, wx, Y_CARPET, wz, BLK_AIR);
+            set(chunk, pos, wx, Y_BASE2,  wz, BLK_AIR);
+            set(chunk, pos, wx, Y_WALL_1, wz, BLK_AIR);
+            set(chunk, pos, wx, Y_WALL_2, wz, BLK_AIR);
+            set(chunk, pos, wx, Y_WALL_3, wz, BLK_AIR);
+            set(chunk, pos, wx, Y_CEIL,   wz, isLamp(wx, wz) ? BLK_LAMP : BLK_CEIL);
+        } else {
+            // ── LANTAI NORMAL — karpet rata ───────────────────────────────
+            set(chunk, pos, wx, Y_CARPET, wz, BLK_CARPET);
+            set(chunk, pos, wx, Y_BASE2,  wz, BLK_AIR);
+            set(chunk, pos, wx, Y_WALL_1, wz, BLK_AIR);
+            set(chunk, pos, wx, Y_WALL_2, wz, BLK_AIR);
+            set(chunk, pos, wx, Y_WALL_3, wz, BLK_AIR);
+            set(chunk, pos, wx, Y_CEIL,   wz, isLamp(wx, wz) ? BLK_LAMP : BLK_CEIL);
+        }
+    }
+
+    /**
+     * Apakah posisi (wx,wz) merupakan lubang pitfall?
+     *
+     * Algoritma:
+     * 1. Hitung "cluster region" 16×16. Per cluster, seed menentukan apakah
+     *    cluster ini aktif (~60% aktif) dan offset grid-nya (0 atau 1 blok shift).
+     * 2. Di dalam cluster aktif, lubang muncul di posisi grid 3-blok:
+     *    setiap 3 blok → 2 blok lubang, 1 blok "jembatan" (karpet solid).
+     *    Jadi pola: PIT PIT SOLID PIT PIT SOLID PIT PIT SOLID …
+     *    Ini persis seperti foto referensi: lubang 2×2 dipisah jembatan 1 blok.
+     * 3. "Jembatan" selebar 1 blok di sumbu X dan Z agar tetap bisa melewati,
+     *    tapi harus hati-hati (mirip Room 14D di Kane Pixels).
+     */
+    private boolean isPitfall(int wx, int wz) {
+        // Cluster region 16×16
+        final int CR = 16;
+        int crx = Math.floorDiv(wx, CR);
+        int crz = Math.floorDiv(wz, CR);
+
+        // Seed cluster: tentukan apakah cluster ini aktif
+        long cs = ((long) crx * 0x6C62272E07BB0142L)
+                ^ ((long) crz * 0xD1B54A32D192ED03L)
+                ^ 0xC0FFEE00DEADBEAFL;
+        // ~60% cluster aktif punya lubang
+        if (Math.abs(cs % 100) >= 60) return false;
+
+        // Offset kecil per cluster agar tidak terlalu simetris (0 atau 1)
+        int offX = (int) Math.abs((cs >> 8) % 2);
+        int offZ = (int) Math.abs((cs >> 16) % 2);
+
+        // Posisi lokal dalam cluster
+        int lx = Math.floorMod(wx + offX, CR);
+        int lz = Math.floorMod(wz + offZ, CR);
+
+        // Pola grid 3 blok: posisi 0,1 = lubang; posisi 2 = jembatan
+        int gx = Math.floorMod(lx, 3);
+        int gz = Math.floorMod(lz, 3);
+
+        // Lubang hanya di 2×2 pertama tiap sel grid (bukan di jembatan)
+        return gx != 2 && gz != 2;
     }
 
     /**
@@ -342,6 +459,8 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
             case ZONE_CORRIDOR: return isSolidCorridor(wx, wz);
             case ZONE_OPEN:     return isSolidOpen(wx, wz);
             case ZONE_COMPLEX:  return isSolidComplex(wx, wz);
+            // ZONE_PITFALLS pakai grid OFFICE untuk dindingnya
+            case ZONE_PITFALLS: return isSolidOffice(wx, wz);
             default:            return isSolidOffice(wx, wz);
         }
     }
