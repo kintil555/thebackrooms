@@ -1,33 +1,40 @@
 package com.backrooms.mod.world;
 
 import com.backrooms.mod.BackroomsMod;
-import net.minecraft.core.registries.Registries;
-import net.minecraft.world.level.chunk.ChunkGenerator;
-import net.minecraftforge.registries.DeferredRegister;
-import net.minecraftforge.registries.ForgeRegistries;
-import net.minecraftforge.registries.RegistryObject;
-import com.mojang.serialization.MapCodec;
-import net.minecraft.core.Registry;
-import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.eventbus.api.IEventBus;
-import net.minecraftforge.registries.NewRegistryEvent;
-import net.minecraftforge.registries.RegisterEvent;
+import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 
 /**
- * Mendaftarkan BackroomsChunkGenerator ke registry Minecraft
- * agar bisa direferensikan dari dimension JSON.
+ * Mendaftarkan BackroomsChunkGenerator ke BuiltInRegistries.CHUNK_GENERATOR.
+ *
+ * PENTING: CHUNK_GENERATOR adalah vanilla registry, BUKAN Forge-wrapped registry.
+ * DeferredRegister TIDAK bisa dipakai di sini karena Forge tidak memiliki
+ * IForgeRegistry wrapper untuk registry ini. Harus pakai Registry.register()
+ * langsung di FMLCommonSetupEvent via enqueueWork().
+ *
+ * Kalau pakai DeferredRegister, codec tidak pernah ter-register, JSON dimensi
+ * gagal deserialize generator-nya, dan dimensi jadi void kosong.
  */
 public class BackroomsChunkGeneratorType {
 
-    // DeferredRegister untuk ChunkGenerator codec
-    public static final DeferredRegister<MapCodec<? extends ChunkGenerator>> CHUNK_GENERATORS =
-            DeferredRegister.create(Registries.CHUNK_GENERATOR, BackroomsMod.MOD_ID);
-
-    public static final RegistryObject<MapCodec<? extends ChunkGenerator>> BACKROOMS_GENERATOR =
-            CHUNK_GENERATORS.register("backrooms_generator",
-                    () -> BackroomsChunkGenerator.CODEC);
+    private static final ResourceLocation ID =
+            ResourceLocation.fromNamespaceAndPath(BackroomsMod.MOD_ID, "backrooms_generator");
 
     public static void register(IEventBus modBus) {
-        CHUNK_GENERATORS.register(modBus);
+        modBus.addListener(BackroomsChunkGeneratorType::onCommonSetup);
+    }
+
+    private static void onCommonSetup(FMLCommonSetupEvent event) {
+        // enqueueWork() karena registry write harus terjadi di main thread
+        event.enqueueWork(() -> {
+            net.minecraft.core.Registry.register(
+                    BuiltInRegistries.CHUNK_GENERATOR,
+                    ID,
+                    BackroomsChunkGenerator.CODEC
+            );
+            BackroomsMod.LOGGER.info("[Backrooms] ChunkGenerator '{}' registered.", ID);
+        });
     }
 }
