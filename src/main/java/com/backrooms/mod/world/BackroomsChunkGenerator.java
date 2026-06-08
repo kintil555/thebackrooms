@@ -19,21 +19,28 @@ import java.util.concurrent.CompletableFuture;
 /**
  * BackroomsChunkGenerator — Level 0
  *
- * LAYOUT VERTIKAL (sesuai build referensi):
- *   Y=0  Bedrock (alas)
- *   Y=1  Brown Wool (karpet lantai)
- *   Y=2  Cut Sandstone (baseboard bawah dinding)
- *   Y=3  Stripped Oak Log (dinding lapis 1)
- *   Y=4  Stripped Oak Log (dinding lapis 2)
- *   Y=5  Stripped Oak Log (dinding lapis 3)
- *   Y=6  Smooth Stone (ceiling)
- *   Y=7  Frog Light setiap 3 blok di X dan Z / Bedrock di tempat lain
- *   Y=8  Bedrock (atap solid)
+ * LAYOUT VERTIKAL:
+ *   Y=0  Bedrock
+ *   Y=1  Brown Wool (karpet)
+ *   Y=2  Cut Sandstone (baseboard dinding)   ← AIR jika open
+ *   Y=3  Stripped Oak Log (dinding)           ← AIR jika open
+ *   Y=4  Stripped Oak Log (dinding)           ← AIR jika open
+ *   Y=5  Stripped Oak Log (dinding)           ← AIR jika open
+ *   Y=6  Smooth Stone / Ochre Froglight (ceiling)
+ *   Y=7  Bedrock (atap)
  *
- * Player spawn di Y=2 (berdiri di atas karpet).
- * Lampu: Frog Light berjejer rapi tiap 3 blok (grid X%3==0 && Z%3==0).
- * Pilar: 2×2 Stripped Oak Log di ruangan luas (Y=2–5).
- * Maze: sel 8×8, 80% open, koneksi penuh antar chunk.
+ * MAZE SYSTEM — "Office Partition" style seperti referensi:
+ *   - Grid global 4×4 blok per sel (lebih halus dari 8×8)
+ *   - Tembok TIPIS 1 blok — bukan sel solid besar
+ *   - Pilar 1×1 di titik persimpangan grid
+ *   - Ruangan luas di antara partisi
+ *   - Deterministik per world seed
+ *
+ * Cara kerjanya:
+ *   Setiap blok world (wx, wz) di-cek apakah dia ada di "garis partisi".
+ *   Garis partisi muncul di interval GRID_SIZE blok (setiap 4 blok).
+ *   Di tiap garis, ada "pintu" (gap) yang dibuka/tutup berdasarkan seed.
+ *   Pilar 1×1 ada di setiap titik persilangan garis X dan Z.
  */
 public class BackroomsChunkGenerator extends ChunkGenerator {
 
@@ -44,28 +51,30 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
             ).apply(instance, BackroomsChunkGenerator::new));
 
     // ─── Y levels ─────────────────────────────────────────────────────────────
-    private static final int Y_BEDROCK_FLOOR = 0;
-    private static final int Y_CARPET        = 1;
-    private static final int Y_BASEBOARD     = 2;
-    private static final int Y_WALL_1        = 3;
-    private static final int Y_WALL_2        = 4;
-    private static final int Y_WALL_3        = 5;
-    private static final int Y_CEILING       = 6;
-    
-    private static final int Y_ROOF          = 7;  // Bedrock atap
+    private static final int Y_BASE     = 0;
+    private static final int Y_CARPET   = 1;
+    private static final int Y_BASE2    = 2;   // cut sandstone baseboard
+    private static final int Y_WALL_1   = 3;
+    private static final int Y_WALL_2   = 4;
+    private static final int Y_WALL_3   = 5;
+    private static final int Y_CEILING  = 6;
+    private static final int Y_ROOF     = 7;
 
-    // ─── Block states ─────────────────────────────────────────────────────────
-    private static final BlockState BLK_BEDROCK   = Blocks.BEDROCK.defaultBlockState();
-    private static final BlockState BLK_CARPET    = Blocks.BROWN_WOOL.defaultBlockState();
-    private static final BlockState BLK_BASE      = Blocks.CUT_SANDSTONE.defaultBlockState();
-    private static final BlockState BLK_WALL      = Blocks.STRIPPED_OAK_LOG.defaultBlockState();
-    private static final BlockState BLK_CEILING   = Blocks.SMOOTH_STONE.defaultBlockState();
-    private static final BlockState BLK_LIGHT     = Blocks.OCHRE_FROGLIGHT.defaultBlockState();
-    private static final BlockState BLK_AIR       = Blocks.AIR.defaultBlockState();
+    // ─── Blocks ───────────────────────────────────────────────────────────────
+    private static final BlockState BLK_BEDROCK  = Blocks.BEDROCK.defaultBlockState();
+    private static final BlockState BLK_CARPET   = Blocks.BROWN_WOOL.defaultBlockState();
+    private static final BlockState BLK_BASE     = Blocks.CUT_SANDSTONE.defaultBlockState();
+    private static final BlockState BLK_WALL     = Blocks.STRIPPED_OAK_LOG.defaultBlockState();
+    private static final BlockState BLK_CEIL     = Blocks.SMOOTH_STONE.defaultBlockState();
+    private static final BlockState BLK_LAMP     = Blocks.OCHRE_FROGLIGHT.defaultBlockState();
+    private static final BlockState BLK_AIR      = Blocks.AIR.defaultBlockState();
 
-    // ─── Maze ─────────────────────────────────────────────────────────────────
-    private static final int CELL_SIZE       = 8;
-    private static final int CELLS_PER_CHUNK = 2;
+    // ─── Maze config ──────────────────────────────────────────────────────────
+    /**
+     * Jarak antar garis partisi (blok).
+     * 6 = ruangan 5 blok lebar + 1 blok tembok — cukup lega, mirip referensi.
+     */
+    private static final int GRID    = 6;
 
     public BackroomsChunkGenerator(BiomeSource biomeSource) {
         super(biomeSource);
@@ -83,54 +92,128 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
             Blender blender, RandomState randomState,
             StructureManager structureManager, ChunkAccess chunk) {
 
-        int cx    = chunk.getPos().x;
-        int cz    = chunk.getPos().z;
         int baseX = chunk.getPos().getMinBlockX();
         int baseZ = chunk.getPos().getMinBlockZ();
-
-        boolean[][] openMap = buildOpenMap(cx, cz);
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
 
         for (int lx = 0; lx < 16; lx++) {
             for (int lz = 0; lz < 16; lz++) {
                 int wx = baseX + lx;
                 int wz = baseZ + lz;
-                boolean open   = openMap[lx][lz];
-                boolean pillar = open && isPillar(wx, wz, openMap, lx, lz);
-                fillColumn(chunk, pos, lx, lz, wx, wz, open, pillar);
+                boolean solid = isSolid(wx, wz);
+                fillColumn(chunk, pos, lx, lz, wx, wz, solid);
             }
         }
         return CompletableFuture.completedFuture(chunk);
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    // COLUMN
+    // MAZE LOGIC — isSolid
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Menentukan apakah blok di (wx, wz) adalah dinding/pilar.
+     *
+     * Prinsip:
+     *   - Garis X terjadi di wx % GRID == 0
+     *   - Garis Z terjadi di wz % GRID == 0
+     *   - Persilangan (wx%GRID==0 && wz%GRID==0) → selalu PILAR 1×1
+     *   - Segmen di garis X (wz%GRID==0) → dinding tipis, dengan gap (pintu) acak
+     *   - Segmen di garis Z (wx%GRID==0) → dinding tipis, dengan gap (pintu) acak
+     *   - Bukan garis → selalu OPEN (udara/karpet)
+     */
+    private boolean isSolid(int wx, int wz) {
+        int gx = Math.floorMod(wx, GRID);
+        int gz = Math.floorMod(wz, GRID);
+
+        boolean onLineX = (gx == 0); // blok ini ada di "garis partisi vertikal"
+        boolean onLineZ = (gz == 0); // blok ini ada di "garis partisi horizontal"
+
+        if (!onLineX && !onLineZ) return false; // interior ruangan → open
+
+        // Koordinat "sel" grid tempat blok ini berada
+        int cellX = Math.floorDiv(wx, GRID); // indeks sel X
+        int cellZ = Math.floorDiv(wz, GRID); // indeks sel Z
+
+        if (onLineX && onLineZ) {
+            // ── Titik persilangan → selalu pilar solid ──────────────────────
+            return true;
+        }
+
+        if (onLineX) {
+            // ── Garis vertikal (partisi di arah Z) ─────────────────────────
+            // Segmen ini ada di antara sel (cellX-1, cellZ) dan (cellX, cellZ)
+            // Cek apakah ada "pintu" di posisi gz ini dalam segmen ini
+            // Setiap segmen panjang (GRID-1) blok (antara 2 pilar)
+            // Pintu lebar 2 blok di tengah segmen (gz=2,3 dari 5)
+            return !isDoor(cellX, cellZ, false, gz);
+        }
+
+        // onLineZ:
+        // ── Garis horizontal (partisi di arah X) ───────────────────────────
+        return !isDoor(cellX, cellZ, true, gx);
+    }
+
+    /**
+     * Apakah ada "pintu" (gap terbuka) di posisi ini?
+     *
+     * @param cellX  indeks sel X
+     * @param cellZ  indeks sel Z
+     * @param isHoriz true = garis horizontal (arah X), false = vertikal (arah Z)
+     * @param offset  posisi dalam segmen (1..GRID-1)
+     */
+    private boolean isDoor(int cellX, int cellZ, boolean isHoriz, int offset) {
+        // Pintu hanya di blok tengah segmen: offset == GRID/2 atau GRID/2+1
+        // Untuk GRID=6: offset 3 dan 4 → pintu lebar 2
+        int mid = GRID / 2;
+        if (offset != mid && offset != mid + 1) return false;
+
+        // Seed untuk segmen ini — apakah segmen ini punya pintu terbuka?
+        long s = isHoriz
+                ? wallSeed(cellX, cellZ, 1)   // partisi horizontal antara cellZ-1 dan cellZ
+                : wallSeed(cellX, cellZ, 0);  // partisi vertikal antara cellX-1 dan cellX
+
+        // ~70% segmen punya pintu terbuka → maze tetap terhubung, tidak terlalu padat
+        return (Math.abs(s % 10) < 7);
+    }
+
+    /** Seed deterministik per segmen tembok. */
+    private long wallSeed(int cellX, int cellZ, int axis) {
+        return ((long) cellX * 0x9E3779B97F4A7C15L)
+             ^ ((long) cellZ * 0x6C62272E07BB0142L)
+             ^ ((long) axis  * 0xD1B54A32D192ED03L)
+             ^ 0xBADC0FFEE0DDF00DL;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // COLUMN FILL
     // ══════════════════════════════════════════════════════════════════════════
 
     private void fillColumn(ChunkAccess chunk, BlockPos.MutableBlockPos pos,
-                            int lx, int lz, int wx, int wz,
-                            boolean open, boolean pillar) {
-        set(chunk, pos, lx, Y_BEDROCK_FLOOR, lz, BLK_BEDROCK);
-        set(chunk, pos, lx, Y_ROOF,          lz, BLK_BEDROCK);
+                            int lx, int lz, int wx, int wz, boolean solid) {
+        // Y=0 bedrock selalu
+        set(chunk, pos, lx, Y_BASE,  lz, BLK_BEDROCK);
+        // Y=7 bedrock atap selalu
+        set(chunk, pos, lx, Y_ROOF,  lz, BLK_BEDROCK);
 
-        if (!open || pillar) {
-            // Dinding / pilar solid
-            set(chunk, pos, lx, Y_CARPET,    lz, BLK_BASE);
-            set(chunk, pos, lx, Y_BASEBOARD, lz, BLK_BASE);
-            set(chunk, pos, lx, Y_WALL_1,    lz, BLK_WALL);
-            set(chunk, pos, lx, Y_WALL_2,    lz, BLK_WALL);
-            set(chunk, pos, lx, Y_WALL_3,    lz, BLK_WALL);
-            set(chunk, pos, lx, Y_CEILING,   lz, BLK_WALL);    // dinding nyambung ke ceiling
+        if (solid) {
+            // ── DINDING / PILAR ─────────────────────────────────────────────
+            set(chunk, pos, lx, Y_CARPET, lz, BLK_BASE);   // baseboard turun ke lantai
+            set(chunk, pos, lx, Y_BASE2,  lz, BLK_BASE);   // cut sandstone
+            set(chunk, pos, lx, Y_WALL_1, lz, BLK_WALL);
+            set(chunk, pos, lx, Y_WALL_2, lz, BLK_WALL);
+            set(chunk, pos, lx, Y_WALL_3, lz, BLK_WALL);
+            set(chunk, pos, lx, Y_CEILING,lz, BLK_WALL);   // sambung ke ceiling
         } else {
-            // Ruangan terbuka
-            set(chunk, pos, lx, Y_CARPET,    lz, BLK_CARPET);
-            set(chunk, pos, lx, Y_BASEBOARD, lz, BLK_AIR);
-            set(chunk, pos, lx, Y_WALL_1,    lz, BLK_AIR);
-            set(chunk, pos, lx, Y_WALL_2,    lz, BLK_AIR);
-            set(chunk, pos, lx, Y_WALL_3,    lz, BLK_AIR);
-            // Ceiling = Froglight di spot lampu, Smooth Stone di tempat lain
-            set(chunk, pos, lx, Y_CEILING,   lz,
-                isLamp(wx, wz) ? BLK_LIGHT : BLK_CEILING);
+            // ── RUANGAN TERBUKA ─────────────────────────────────────────────
+            set(chunk, pos, lx, Y_CARPET, lz, BLK_CARPET);
+            set(chunk, pos, lx, Y_BASE2,  lz, BLK_AIR);
+            set(chunk, pos, lx, Y_WALL_1, lz, BLK_AIR);
+            set(chunk, pos, lx, Y_WALL_2, lz, BLK_AIR);
+            set(chunk, pos, lx, Y_WALL_3, lz, BLK_AIR);
+            // Ceiling: froglight tiap 3 blok, smooth stone lainnya
+            set(chunk, pos, lx, Y_CEILING, lz,
+                isLamp(wx, wz) ? BLK_LAMP : BLK_CEIL);
         }
     }
 
@@ -140,129 +223,11 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    // LAMP
+    // LAMP — froglight tiap 3 blok
     // ══════════════════════════════════════════════════════════════════════════
 
-    /** Frog Light berjejer rapi tiap 3 blok di kedua arah. */
     private boolean isLamp(int wx, int wz) {
         return (Math.floorMod(wx, 3) == 0) && (Math.floorMod(wz, 3) == 0);
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // OPEN MAP
-    // ══════════════════════════════════════════════════════════════════════════
-
-    private boolean[][] buildOpenMap(int cx, int cz) {
-        boolean[][] map   = new boolean[16][16];
-        boolean[][] self  = getCellGrid(cx,     cz);
-        boolean[][] left  = getCellGrid(cx - 1, cz);
-        boolean[][] right = getCellGrid(cx + 1, cz);
-        boolean[][] top   = getCellGrid(cx,     cz - 1);
-        boolean[][] bot   = getCellGrid(cx,     cz + 1);
-
-        for (int sx = 0; sx < CELLS_PER_CHUNK; sx++) {
-            for (int sz = 0; sz < CELLS_PER_CHUNK; sz++) {
-                if (!self[sx][sz]) continue;
-                int ox = sx * CELL_SIZE, oz = sz * CELL_SIZE;
-
-                // Isi penuh
-                for (int dx = 0; dx < CELL_SIZE; dx++)
-                    for (int dz = 0; dz < CELL_SIZE; dz++)
-                        map[ox + dx][oz + dz] = true;
-
-                // Dinding kiri
-                boolean cLeft = (sx > 0) ? self[sx-1][sz] : left[CELLS_PER_CHUNK-1][sz];
-                if (!cLeft) for (int dz = 0; dz < CELL_SIZE; dz++) map[ox][oz+dz] = false;
-
-                // Dinding atas
-                boolean cTop = (sz > 0) ? self[sx][sz-1] : top[sx][CELLS_PER_CHUNK-1];
-                if (!cTop) for (int dx = 0; dx < CELL_SIZE; dx++) map[ox+dx][oz] = false;
-
-                // Dinding kanan (hanya sel paling kanan)
-                if (sx == CELLS_PER_CHUNK - 1) {
-                    boolean cRight = right[0][sz];
-                    if (!cRight) for (int dz = 0; dz < CELL_SIZE; dz++) map[ox+CELL_SIZE-1][oz+dz] = false;
-                }
-                // Dinding bawah (hanya sel paling bawah)
-                if (sz == CELLS_PER_CHUNK - 1) {
-                    boolean cBot = bot[sx][0];
-                    if (!cBot) for (int dx = 0; dx < CELL_SIZE; dx++) map[ox+dx][oz+CELL_SIZE-1] = false;
-                }
-            }
-        }
-
-        // Sambungan antar sel dalam chunk
-        for (int sz = 0; sz < CELLS_PER_CHUNK; sz++)
-            if (self[0][sz] && self[1][sz])
-                for (int dz = 0; dz < CELL_SIZE; dz++) {
-                    map[CELL_SIZE-1][sz*CELL_SIZE+dz] = true;
-                    map[CELL_SIZE][sz*CELL_SIZE+dz]   = true;
-                }
-        for (int sx = 0; sx < CELLS_PER_CHUNK; sx++)
-            if (self[sx][0] && self[sx][1])
-                for (int dx = 0; dx < CELL_SIZE; dx++) {
-                    map[sx*CELL_SIZE+dx][CELL_SIZE-1] = true;
-                    map[sx*CELL_SIZE+dx][CELL_SIZE]   = true;
-                }
-
-        // Sambungan ke chunk tetangga
-        for (int sz = 0; sz < CELLS_PER_CHUNK; sz++) {
-            if (self[0][sz] && left[CELLS_PER_CHUNK-1][sz])
-                for (int dz = 0; dz < CELL_SIZE; dz++) map[0][sz*CELL_SIZE+dz] = true;
-            if (self[CELLS_PER_CHUNK-1][sz] && right[0][sz])
-                for (int dz = 0; dz < CELL_SIZE; dz++) map[15][sz*CELL_SIZE+dz] = true;
-        }
-        for (int sx = 0; sx < CELLS_PER_CHUNK; sx++) {
-            if (self[sx][0] && top[sx][CELLS_PER_CHUNK-1])
-                for (int dx = 0; dx < CELL_SIZE; dx++) map[sx*CELL_SIZE+dx][0] = true;
-            if (self[sx][CELLS_PER_CHUNK-1] && bot[sx][0])
-                for (int dx = 0; dx < CELL_SIZE; dx++) map[sx*CELL_SIZE+dx][15] = true;
-        }
-
-        return map;
-    }
-
-    private boolean[][] getCellGrid(int cx, int cz) {
-        boolean[][] g = new boolean[CELLS_PER_CHUNK][CELLS_PER_CHUNK];
-        for (int sx = 0; sx < CELLS_PER_CHUNK; sx++)
-            for (int sz = 0; sz < CELLS_PER_CHUNK; sz++)
-                g[sx][sz] = (Math.abs(cellSeed(cx, cz, sx, sz) % 100) < 80);
-        boolean any = false;
-        for (int i = 0; i < CELLS_PER_CHUNK && !any; i++)
-            for (int j = 0; j < CELLS_PER_CHUNK && !any; j++)
-                if (g[i][j]) any = true;
-        if (!any) g[0][0] = true;
-        return g;
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // PILLAR
-    // ══════════════════════════════════════════════════════════════════════════
-
-    private boolean isPillar(int wx, int wz, boolean[][] openMap, int lx, int lz) {
-        if (Math.floorMod(wx, 12) >= 2 || Math.floorMod(wz, 12) >= 2) return false;
-        for (int dx = -2; dx <= 3; dx++)
-            for (int dz = -2; dz <= 3; dz++) {
-                int nx = lx + dx, nz = lz + dz;
-                if (nx < 0 || nx >= 16 || nz < 0 || nz >= 16) return false;
-                if (!openMap[nx][nz]) return false;
-            }
-        return (Math.abs(pillarSeed(wx - Math.floorMod(wx, 12),
-                                    wz - Math.floorMod(wz, 12)) % 3) != 2);
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // SEEDS
-    // ══════════════════════════════════════════════════════════════════════════
-
-    private long cellSeed(int cx, int cz, int sx, int sz) {
-        return ((long) cx * 341873128712L) ^ ((long) cz * 132897987541L)
-             ^ ((long) sx * 0x9E3779B97F4A7C15L) ^ ((long) sz * 0x6C62272E07BB0142L)
-             ^ 0xBADC0FFEE0DDF00DL;
-    }
-
-    private long pillarSeed(int wx, int wz) {
-        return ((long) wx * 0x517CC1B727220A95L) ^ ((long) wz * 0xB492DFFE9FDEAD17L);
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -292,7 +257,7 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
     }
 
     @Override public int getSeaLevel() { return -1; }
-    @Override public int getMinY()     { return Y_BEDROCK_FLOOR; }
+    @Override public int getMinY()     { return Y_BASE; }
 
     @Override
     public int getBaseHeight(int x, int z, Heightmap.Types t,
@@ -300,6 +265,6 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
 
     @Override
     public NoiseColumn getBaseColumn(int x, int z, LevelHeightAccessor l, RandomState rs) {
-        return new NoiseColumn(Y_BEDROCK_FLOOR, new BlockState[0]);
+        return new NoiseColumn(Y_BASE, new BlockState[0]);
     }
 }
