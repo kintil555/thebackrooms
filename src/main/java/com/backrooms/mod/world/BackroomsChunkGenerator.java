@@ -10,6 +10,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.ChunkGenerator;
+import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.levelgen.*;
 import net.minecraft.world.level.levelgen.blending.Blender;
 
@@ -418,6 +419,18 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
     // ══════════════════════════════════════════════════════════════════════════
     // REQUIRED OVERRIDES
     // ══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Dipanggil SEKALI saat chunk pertama kali di-generate (fase FEATURES).
+     * Ini tempat yang benar untuk menaruh struktur — tidak dipanggil saat reload.
+     */
+    @Override
+    public void applyBiomeDecoration(WorldGenLevel level, ChunkAccess chunk,
+                                     StructureManager structureManager) {
+        // Ambil world seed dari ServerLevel
+        long seed = level.getSeed();
+        BackroomsStructureSpawner.decorate(level, chunk, seed);
+    }
 
     @Override
     public void applyCarvers(WorldGenRegion r, long s, RandomState rs,

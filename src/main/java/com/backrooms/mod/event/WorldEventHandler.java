@@ -1,7 +1,6 @@
 package com.backrooms.mod.event;
 
 import com.backrooms.mod.BackroomsMod;
-import com.backrooms.mod.world.BackroomsStructureSpawner;
 import com.backrooms.mod.world.NullZoneManager;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraftforge.event.level.LevelEvent;
@@ -16,9 +15,7 @@ public class WorldEventHandler {
         if (!(event.getLevel() instanceof ServerLevel serverLevel)) return;
         if (serverLevel.dimension().equals(net.minecraft.world.level.Level.OVERWORLD)) {
             NullZoneManager.clear();
-            // Reset structure spawner cache — sesi baru, chunk dianggap fresh
-            BackroomsStructureSpawner.clearProcessedChunks();
-            BackroomsMod.LOGGER.info("[Backrooms] World unloaded. Null zone + structure cache cleared.");
+            BackroomsMod.LOGGER.info("[Backrooms] World unloaded. Null zone data cleared.");
         }
     }
 }
