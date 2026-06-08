@@ -224,22 +224,63 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
     }
 
     /**
-     * Solid check khusus ZONE_VOID — grid lebih besar (8 blok) dan banyak pintu
-     * agar ruangannya luas tapi tetap ada tembok pembatas.
+     * Solid check khusus ZONE_VOID.
+     *
+     * Logika baru: interior region 48×48 = KOSONG TOTAL.
+     * Dinding hanya tumbuh di TEPIAN region (1 blok paling luar di tiap sisi).
+     * Tidak ada grid internal, tidak ada pilar di tengah.
+     *
+     * Tepian region: blok pertama dan terakhir di sumbu X dan Z dalam region.
+     * Misalnya region rx=0 → X: 0..47. Tepian = X==0 atau X==47.
+     * Pada tepian, dinding penuh Y=0..40. Interior = lantai + langit-langit saja.
+     *
+     * Pintu (gap 2 blok) dibuka di tengah tiap sisi agar bisa masuk/keluar
+     * ke region tetangga (chance 80% → lebih banyak pintu, ruangan lebih terhubung).
      */
     private boolean isSolidVoid(int wx, int wz) {
-        final int G = 8;
-        int gx = Math.floorMod(wx, G);
-        int gz = Math.floorMod(wz, G);
-        boolean onX = (gx == 0);
-        boolean onZ = (gz == 0);
-        if (!onX && !onZ) return false;
-        if (onX && onZ) return true; // pilar persimpangan
-        int cellX = Math.floorDiv(wx, G);
-        int cellZ = Math.floorDiv(wz, G);
-        // 75% pintu terbuka → ruangan sangat luas, tembok hanya di beberapa sisi
-        if (onX) return !isDoor(cellX, cellZ, false, gz, G, 0.75);
-        return      !isDoor(cellX, cellZ, true,  gx, G, 0.75);
+        // Hitung posisi dalam region 48×48
+        int rx  = Math.floorDiv(wx, REGION_SIZE);
+        int rz  = Math.floorDiv(wz, REGION_SIZE);
+        int lx  = Math.floorMod(wx, REGION_SIZE);   // 0..47
+        int lz  = Math.floorMod(wz, REGION_SIZE);   // 0..47
+
+        boolean onWestEdge  = (lx == 0);
+        boolean onEastEdge  = (lx == REGION_SIZE - 1);
+        boolean onNorthEdge = (lz == 0);
+        boolean onSouthEdge = (lz == REGION_SIZE - 1);
+
+        boolean onEdgeX = onWestEdge  || onEastEdge;
+        boolean onEdgeZ = onNorthEdge || onSouthEdge;
+
+        // Interior: bukan di tepian → kosong
+        if (!onEdgeX && !onEdgeZ) return false;
+
+        // Sudut (pertemuan dua tepian) → selalu solid (pilar sudut)
+        if (onEdgeX && onEdgeZ) return true;
+
+        // Tepian X (dinding barat/timur): cek apakah ada pintu di posisi lz ini
+        if (onEdgeX) {
+            // Pintu selebar 2 blok di tengah sisi (lz ≈ 23-24)
+            int mid = REGION_SIZE / 2;
+            boolean isDoorPos = (lz == mid || lz == mid - 1);
+            if (!isDoorPos) return true;
+            // Pilih apakah sisi ini punya pintu (seed dari region + sisi)
+            int side = onWestEdge ? 0 : 1;
+            long s = wallSeed(rx, rz, side, REGION_SIZE);
+            return (Math.abs(s % 100) >= 80); // 80% ada pintu → 20% solid
+        }
+
+        // Tepian Z (dinding utara/selatan): cek apakah ada pintu di posisi lx ini
+        if (onEdgeZ) {
+            int mid = REGION_SIZE / 2;
+            boolean isDoorPos = (lx == mid || lx == mid - 1);
+            if (!isDoorPos) return true;
+            int side = onNorthEdge ? 2 : 3;
+            long s = wallSeed(rx, rz, side, REGION_SIZE);
+            return (Math.abs(s % 100) >= 80);
+        }
+
+        return false;
     }
 
     // ══════════════════════════════════════════════════════════════════════════
