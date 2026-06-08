@@ -60,7 +60,7 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
     private static final BlockState BLK_BASE      = Blocks.CUT_SANDSTONE.defaultBlockState();
     private static final BlockState BLK_WALL      = Blocks.STRIPPED_OAK_LOG.defaultBlockState();
     private static final BlockState BLK_CEILING   = Blocks.SMOOTH_STONE.defaultBlockState();
-    private static final BlockState BLK_LIGHT     = Blocks.FROGLIGHT.defaultBlockState();
+    private static final BlockState BLK_LIGHT     = Blocks.OCHRE_FROGLIGHT.defaultBlockState();
     private static final BlockState BLK_AIR       = Blocks.AIR.defaultBlockState();
 
     // ─── Maze ─────────────────────────────────────────────────────────────────
