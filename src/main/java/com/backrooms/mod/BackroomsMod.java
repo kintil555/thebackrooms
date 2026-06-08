@@ -2,6 +2,7 @@ package com.backrooms.mod;
 
 import com.backrooms.mod.block.ModBlocks;
 import com.backrooms.mod.command.BackroomsCommand;
+import com.backrooms.mod.command.BackroomsLocateCommand;
 import com.backrooms.mod.dimension.ModDimensions;
 import com.backrooms.mod.event.NullZoneEventHandler;
 import com.backrooms.mod.world.BackroomsChunkGeneratorType;
@@ -41,6 +42,7 @@ public class BackroomsMod {
 
     private void onRegisterCommands(RegisterCommandsEvent event) {
         BackroomsCommand.register(event.getDispatcher());
+        BackroomsLocateCommand.register(event.getDispatcher());
         LOGGER.info("[Backrooms] Commands registered.");
     }
 

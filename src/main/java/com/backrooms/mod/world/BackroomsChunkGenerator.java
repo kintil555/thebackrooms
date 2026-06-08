@@ -374,16 +374,18 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
             }
             set(chunk, pos, wx, Y_VOID_CEIL, wz, BLK_CEIL);
         } else {
-            // ── INTERIOR VOID — udara penuh 38 blok ──────────────────────
+            // ── INTERIOR / SLOT PINTU — udara dari Y=1 sampai ceiling ────
+            // Y=1 tetap carpet (bukan baseboard) agar slot pintu tidak terblokir
             set(chunk, pos, wx, Y_CARPET, wz, BLK_CARPET);
             for (int y = Y_BASE2; y < Y_VOID_CEIL; y++) {
                 set(chunk, pos, wx, y, wz, BLK_AIR);
             }
+            // Ceiling: lamp tiap 8 blok di interior, sisanya smooth stone
             boolean voidLamp = (Math.floorMod(wx, 8) == 0) && (Math.floorMod(wz, 8) == 0);
             set(chunk, pos, wx, Y_VOID_CEIL, wz, voidLamp ? BLK_LAMP : BLK_CEIL);
         }
 
-        // Y=41 ke atas → bedrock solid
+        // Y=41 ke atas → bedrock solid (atap)
         for (int y = Y_VOID_ROOF; y < 64; y++) {
             set(chunk, pos, wx, y, wz, BLK_BEDROCK);
         }
@@ -429,22 +431,23 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
 
         // Tepian X (dinding barat/timur): cek apakah ada pintu (gap 2 blok) di posisi lz ini
         if (onEdgeX) {
+            // Pintu selebar 6 blok di tengah sisi (lz 21..26 untuk REGION_SIZE=48)
             int mid = REGION_SIZE / 2;
-            boolean isDoorPos = (lz == mid || lz == mid - 1);
+            boolean isDoorPos = (lz >= mid - 3 && lz <= mid + 2);
             if (!isDoorPos) return true;
             int side = onWestEdge ? 0 : 1;
             long s = wallSeed(rx, rz, side, REGION_SIZE);
-            return (Math.abs(s % 100) >= 80); // 80% ada pintu → 20% solid
+            return (Math.abs(s % 100) >= 85); // 85% ada pintu → 15% solid
         }
 
         // Tepian Z (dinding utara/selatan): cek apakah ada pintu di posisi lx ini
         if (onEdgeZ) {
             int mid = REGION_SIZE / 2;
-            boolean isDoorPos = (lx == mid || lx == mid - 1);
+            boolean isDoorPos = (lx >= mid - 3 && lx <= mid + 2);
             if (!isDoorPos) return true;
             int side = onNorthEdge ? 2 : 3;
             long s = wallSeed(rx, rz, side, REGION_SIZE);
-            return (Math.abs(s % 100) >= 80);
+            return (Math.abs(s % 100) >= 85);
         }
 
         return false;
