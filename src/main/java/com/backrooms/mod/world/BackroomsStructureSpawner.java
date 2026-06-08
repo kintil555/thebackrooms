@@ -24,69 +24,97 @@ import java.util.Optional;
  *
  * FILOSOFI:
  *   Struktur-struktur ini tidak "seharusnya" ada di sini. Kapal kargo yang
- *   tertanam di lantai karpet. Potongan mineshaft yang tiba-tiba berhenti
- *   di tengah ruangan. Menara pillager yang muncul di ruangan 40 blok tinggi
- *   tapi tanpa satu pun penghuninya. Semuanya misterius, tidak logis, dan
- *   membuat player bertanya-tanya.
+ *   tertanam di lantai karpet. Igloo yang mencuat dari bawah tanah. Menara
+ *   pillager yang muncul di ruangan 40 blok tinggi tapi tanpa satu pun
+ *   penghuninya. Semuanya misterius, tidak logis, dan membuat player bertanya.
  *
  * STRUKTUR:
- *   1. SHIPWRECK FRAGMENT  — 1/180 chunk, semua zone kecuali VOID
- *      Y=1 (terbenam di lantai, hanya puncaknya kelihatan)
+ *   1. SHIPWRECK  — 1/180 chunk, semua zone kecuali VOID
+ *      NBT verified: shipwreck/*.nbt ada di vanilla jar (Structure Block wiki)
+ *      Y=1 (terbenam di lantai, hanya puncak yang kelihatan)
  *      Random rotation + mirror → tiap kapal orientasi berbeda
  *
- *   2. MINESHAFT PIECE     — 1/120 chunk, semua zone
- *      Y=2 (kaki tembok mencuat dari lantai, terpotong batas chunk)
+ *   2. IGLOO FRAGMENT — 1/150 chunk, semua zone
+ *      NBT verified: igloo/bottom.nbt, middle.nbt, top.nbt
+ *      Y=1 (terbenam, hanya interior mencuat dari karpet)
+ *      "bottom" punya secret room → paling misterius
  *
- *   3. PILLAGER OUTPOST    — 1/400 chunk, HANYA ZONE_VOID
- *      Y=2, NO mob spawning (setIgnoreEntities=true)
- *      60% spawn base_plate (blacksmith) saja, 40% feature lain
+ *   3. PILLAGER OUTPOST — 1/300 chunk, HANYA ZONE_VOID
+ *      NBT verified: semua piece pakai prefix "feature_" (bukan subdir /feature/)
+ *      60% watchtower (menara penuh, dramatis di ruangan void 40 blok)
+ *      40% feature saja (cage, tent, logs, dll)
+ *      setIgnoreEntities=true → TIDAK spawn pillager apapun
  *
- * IMPLEMENTASI:
- *   ChunkEvent.Load → seed per-chunk → roll → StructureTemplate.placeInWorld()
- *   Tidak menggunakan vanilla StructureStart/StructureManager — langsung place NBT.
- *   Struktur akan terpotong oleh batas chunk secara alami (efek misterius).
+ * CATATAN PENTING — MINESHAFT:
+ *   Mineshaft TIDAK punya NBT files. Generatenya secara procedural via Java
+ *   (net.minecraft.world.level.levelgen.structure.structures.MineshaftStructure).
+ *   Tidak bisa di-place via StructureTemplate. Diganti dengan igloo yang
+ *   memberikan efek "reruntuhan overworld yang bocor" serupa.
+ *
+ * CATATAN PENTING — PILLAGER OUTPOST PIECE NAMES:
+ *   BENAR:  minecraft:pillager_outpost/feature_cage1  (underscore, flat)
+ *   SALAH:  minecraft:pillager_outpost/feature/cage1  (slash, subdir)
+ *   Source: verified dari vanilla jar 1.14–1.21 (tidak berubah)
  */
 @Mod.EventBusSubscriber(modid = BackroomsMod.MOD_ID)
 public class BackroomsStructureSpawner {
 
     // ── Chance per chunk (1 in N) ─────────────────────────────────────────────
-    private static final int SHIP_CHANCE      = 180;
-    private static final int MINESHAFT_CHANCE = 120;
-    private static final int OUTPOST_CHANCE   = 400;
+    private static final int SHIP_CHANCE    = 180;
+    private static final int IGLOO_CHANCE   = 150;
+    private static final int OUTPOST_CHANCE = 300;
 
-    // ── Struktur NBT pieces ───────────────────────────────────────────────────
+    // ── SHIPWRECK pieces (verified vanilla 1.21 NBT names) ───────────────────
+    // Semua variant tersedia, dari rightsideup sampai upsidedown
     private static final String[] SHIP_PIECES = {
         "minecraft:shipwreck/with_mast",
-        "minecraft:shipwreck/sideways_full",
+        "minecraft:shipwreck/with_mast_degraded",
         "minecraft:shipwreck/rightsideup_full",
         "minecraft:shipwreck/rightsideup_full_degraded",
-        "minecraft:shipwreck/sideways_fronthalf",
         "minecraft:shipwreck/rightsideup_fronthalf",
+        "minecraft:shipwreck/rightsideup_fronthalf_degraded",
+        "minecraft:shipwreck/sideways_full",
+        "minecraft:shipwreck/sideways_full_degraded",
+        "minecraft:shipwreck/sideways_fronthalf",
+        "minecraft:shipwreck/upsidedown_full",
+        "minecraft:shipwreck/upsidedown_fronthalf",
     };
 
-    private static final String[] MINESHAFT_PIECES = {
-        "minecraft:mineshaft/corridor",
-        "minecraft:mineshaft/cross",
-        "minecraft:mineshaft/room",
-        "minecraft:mineshaft/stairs",
+    // ── IGLOO pieces (verified vanilla 1.21 NBT names) ───────────────────────
+    // bottom = lantai dasar + secret lab room → paling dramatis
+    // middle = dinding igloo
+    // top    = kubah atas → visual unik mencuat dari karpet
+    private static final String[] IGLOO_PIECES = {
+        "minecraft:igloo/bottom",
+        "minecraft:igloo/middle",
+        "minecraft:igloo/top",
     };
 
-    // Outpost: index 0 = base_plate (blacksmith area, sering spawn)
-    // index 1-3 = feature lain (tower, logs, targets)
-    private static final String[] OUTPOST_BASE   = { "minecraft:pillager_outpost/base_plate" };
-    private static final String[] OUTPOST_EXTRAS = {
-        "minecraft:pillager_outpost/feature/guard_tower",
-        "minecraft:pillager_outpost/feature/logs",
-        "minecraft:pillager_outpost/feature/targets_miss",
+    // ── PILLAGER OUTPOST pieces (verified vanilla 1.21 NBT names) ────────────
+    // PENTING: prefix "feature_" bukan subdir "/feature/"
+    // Semua ada di: data/minecraft/structures/pillager_outpost/*.nbt
+    private static final String[] OUTPOST_MAIN = {
+        "minecraft:pillager_outpost/watchtower",
+        "minecraft:pillager_outpost/watchtower_overgrown",
+    };
+    private static final String[] OUTPOST_FEATURES = {
+        "minecraft:pillager_outpost/base_plate",
+        "minecraft:pillager_outpost/feature_cage1",
+        "minecraft:pillager_outpost/feature_cage2",
+        "minecraft:pillager_outpost/feature_logs",
+        "minecraft:pillager_outpost/feature_plate",
+        "minecraft:pillager_outpost/feature_targets",
+        "minecraft:pillager_outpost/feature_tent1",
+        "minecraft:pillager_outpost/feature_tent2",
     };
 
     // ── Zone constants (identik dengan BackroomsChunkGenerator) ──────────────
     private static final int REGION_SIZE = 48;
     private static final int ZONE_VOID   = 3;
 
-    // ── Seed XOR constants (valid hex only: 0-9, A-F) ────────────────────────
-    private static final long SEED_MINE   = 0xA1B2C3D4E5F60001L;
-    private static final long SEED_SHIP   = 0xB2C3D4E5F6A00002L;
+    // ── Per-type seed XOR constants ───────────────────────────────────────────
+    private static final long SEED_SHIP   = 0xA1B2C3D4E5F60001L;
+    private static final long SEED_IGLOO  = 0xB2C3D4E5F6A00002L;
     private static final long SEED_POST   = 0xC3D4E5F6A0B00003L;
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -95,25 +123,20 @@ public class BackroomsStructureSpawner {
 
     @SubscribeEvent
     public static void onChunkLoad(ChunkEvent.Load event) {
+        // Server-side only
         if (!(event.getLevel() instanceof ServerLevel level)) return;
+        // Backrooms dimension only
         if (!level.dimension().equals(ModDimensions.BACKROOMS_LEVEL)) return;
+        // LevelChunk only (tidak proses proto-chunk atau empty chunk)
         if (!(event.getChunk() instanceof LevelChunk chunk)) return;
 
         ChunkPos cp = chunk.getPos();
         long base = chunkSeed(level.getSeed(), cp.x, cp.z);
 
-        // Tengah chunk — untuk cek zone
-        int mx = cp.getMiddleBlockX();
-        int mz = cp.getMiddleBlockZ();
-        int zone = getZone(mx, mz);
+        // Zone check dari tengah chunk
+        int zone = getZone(cp.getMiddleBlockX(), cp.getMiddleBlockZ());
 
-        // ── 1. MINESHAFT — semua zone ─────────────────────────────────────
-        RandomSource rMine = RandomSource.create(base ^ SEED_MINE);
-        if (rMine.nextInt(MINESHAFT_CHANCE) == 0) {
-            tryPlace(level, cp, rMine, MINESHAFT_PIECES, 2, "mineshaft");
-        }
-
-        // ── 2. SHIPWRECK — semua zone kecuali VOID ───────────────────────
+        // ── 1. SHIPWRECK — semua zone kecuali VOID ───────────────────────
         if (zone != ZONE_VOID) {
             RandomSource rShip = RandomSource.create(base ^ SEED_SHIP);
             if (rShip.nextInt(SHIP_CHANCE) == 0) {
@@ -121,13 +144,20 @@ public class BackroomsStructureSpawner {
             }
         }
 
-        // ── 3. PILLAGER OUTPOST — HANYA zone VOID ────────────────────────
+        // ── 2. IGLOO FRAGMENT — semua zone ───────────────────────────────
+        RandomSource rIgloo = RandomSource.create(base ^ SEED_IGLOO);
+        if (rIgloo.nextInt(IGLOO_CHANCE) == 0) {
+            tryPlace(level, cp, rIgloo, IGLOO_PIECES, 1, "igloo");
+        }
+
+        // ── 3. PILLAGER OUTPOST — HANYA ZONE_VOID ────────────────────────
         if (zone == ZONE_VOID) {
             RandomSource rPost = RandomSource.create(base ^ SEED_POST);
             if (rPost.nextInt(OUTPOST_CHANCE) == 0) {
-                // 60% base_plate (blacksmith), 40% random feature
-                String[] pieces = rPost.nextFloat() < 0.60f ? OUTPOST_BASE : OUTPOST_EXTRAS;
-                tryPlace(level, cp, rPost, pieces, 2, "pillager_outpost");
+                // 60% watchtower penuh (dramatis di void room 40 blok)
+                // 40% feature saja (cage/tent/plate dll)
+                String[] pool = rPost.nextFloat() < 0.60f ? OUTPOST_MAIN : OUTPOST_FEATURES;
+                tryPlace(level, cp, rPost, pool, 2, "pillager_outpost");
             }
         }
     }
@@ -141,32 +171,33 @@ public class BackroomsStructureSpawner {
                                  int baseY, String tag) {
         StructureTemplateManager mgr = level.getStructureManager();
 
-        // Pilih piece acak
+        // Pilih piece acak dari pool
         String name = pieces[rng.nextInt(pieces.length)];
         ResourceLocation loc = ResourceLocation.parse(name);
 
         Optional<StructureTemplate> opt = mgr.get(loc);
         if (opt.isEmpty()) {
-            BackroomsMod.LOGGER.debug("[Backrooms] NBT '{}' tidak ditemukan, skip", name);
+            // Tidak seharusnya terjadi kalau nama sudah diverifikasi
+            BackroomsMod.LOGGER.warn("[Backrooms] NBT '{}' tidak ditemukan (cek nama piece)", name);
             return;
         }
 
         StructureTemplate tmpl = opt.get();
 
-        // Posisi: acak dalam chunk
-        int wx = cp.getMinBlockX() + rng.nextInt(14) + 1; // +1 biar tidak di tepi
+        // Posisi: acak dalam chunk, beri margin 1 blok dari tepi
+        int wx = cp.getMinBlockX() + rng.nextInt(14) + 1;
         int wz = cp.getMinBlockZ() + rng.nextInt(14) + 1;
         BlockPos origin = new BlockPos(wx, baseY, wz);
 
-        // Random rotation + mirror → tiap struktur beda orientasi
+        // Random rotation + mirror → tiap instance orientasi beda
         Rotation rot    = Rotation.values()[rng.nextInt(4)];
         Mirror   mirror = Mirror.values()[rng.nextInt(3)];
 
         StructurePlaceSettings cfg = new StructurePlaceSettings()
             .setRotation(rot)
             .setMirror(mirror)
-            .setIgnoreEntities(true)     // TIDAK spawn mob apapun!
-            .setFinalizeEntities(false); // Tidak finalize entity data
+            .setIgnoreEntities(true)       // KRITIS: tidak spawn mob apapun
+            .setFinalizeEntities(false);   // Tidak finalize entity data
 
         try {
             tmpl.placeInWorld(level, origin, origin, cfg, rng, 2);
@@ -174,12 +205,13 @@ public class BackroomsStructureSpawner {
                 "[Backrooms] ✦ {} '{}' → ({},{},{})", tag, name, wx, baseY, wz);
         } catch (Exception e) {
             BackroomsMod.LOGGER.warn(
-                "[Backrooms] Gagal place {} '{}': {}", tag, name, e.getMessage());
+                "[Backrooms] Gagal place {} '{}' di ({},{},{}): {}",
+                tag, name, wx, baseY, wz, e.getMessage());
         }
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    // ZONE HELPER — sama dengan BackroomsChunkGenerator
+    // ZONE — identik dengan BackroomsChunkGenerator.getZone()
     // ══════════════════════════════════════════════════════════════════════════
 
     private static int getZone(int wx, int wz) {
