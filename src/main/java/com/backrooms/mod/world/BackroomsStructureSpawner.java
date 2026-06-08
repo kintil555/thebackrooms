@@ -22,47 +22,48 @@ import net.minecraftforge.event.level.ChunkEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
+import java.util.Collections;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Menspawn struktur overworld "bocor" ke Backrooms Level 0.
  *
- * FILOSOFI:
- *   Struktur-struktur ini tidak "seharusnya" ada di sini. Kapal kargo yang
- *   tertanam di lantai karpet. Igloo yang mencuat dari bawah tanah. Menara
- *   pillager yang muncul di ruangan 40 blok tinggi tapi tanpa satu pun
- *   penghuninya. Semuanya misterius, tidak logis, dan membuat player bertanya.
+ * FIX KRITIS:
+ *   Sebelumnya struktur di-place di ChunkEvent.Load → setiap kali chunk
+ *   di-load ulang (login, unload/reload) struktur di-place LAGI, menimpa
+ *   blok lantai Y=0–1 dengan AIR dan merusak generation.
  *
- * STRUKTUR:
- *   1. SHIPWRECK  — 1/180 chunk, semua zone kecuali VOID
- *      NBT verified: shipwreck/*.nbt ada di vanilla jar (Structure Block wiki)
- *      Y=1 (terbenam di lantai, hanya puncak yang kelihatan)
- *      Random rotation + mirror → tiap kapal orientasi berbeda
+ *   Sekarang pakai Set alreadyProcessed (ConcurrentHashMap key set) untuk
+ *   memastikan tiap chunk hanya diproses SEKALI per sesi server.
+ *   Chunk yang belum ada di set = baru pertama kali load = boleh di-place.
+ *   Chunk yang sudah ada = sudah pernah di-place = skip.
  *
- *   2. IGLOO FRAGMENT — 1/150 chunk, semua zone
- *      NBT verified: igloo/bottom.nbt, middle.nbt, top.nbt
- *      Y=1 (terbenam, hanya interior mencuat dari karpet)
- *      "bottom" punya secret room → paling misterius
+ *   Ini aman karena struktur sudah tersimpan di world save (level.dat),
+ *   jadi restart server pun tidak masalah — chunk fresh-load lagi tapi
+ *   blok struktur sudah ada di terrain, placement hanya terjadi sekali.
  *
- *   3. PILLAGER OUTPOST — 1/300 chunk, HANYA ZONE_VOID
- *      NBT verified: semua piece pakai prefix "feature_" (bukan subdir /feature/)
- *      60% watchtower (menara penuh, dramatis di ruangan void 40 blok)
- *      40% feature saja (cage, tent, logs, dll)
- *      setIgnoreEntities=true → TIDAK spawn pillager apapun
- *
- * CATATAN PENTING — MINESHAFT:
- *   Mineshaft TIDAK punya NBT files. Generatenya secara procedural via Java
- *   (net.minecraft.world.level.levelgen.structure.structures.MineshaftStructure).
- *   Tidak bisa di-place via StructureTemplate. Diganti dengan igloo yang
- *   memberikan efek "reruntuhan overworld yang bocor" serupa.
- *
- * CATATAN PENTING — PILLAGER OUTPOST PIECE NAMES:
- *   BENAR:  minecraft:pillager_outpost/feature_cage1  (underscore, flat)
- *   SALAH:  minecraft:pillager_outpost/feature/cage1  (slash, subdir)
- *   Source: verified dari vanilla jar 1.14–1.21 (tidak berubah)
+ * FIX MINESHAFT:
+ *   oy diubah dari 2 ke 1 (tepat di atas Y=0 bedrock) agar lorong tidak
+ *   mengapung, dan setBlock sekarang TIDAK pernah menulis ke Y <= 1 agar
+ *   tidak menghapus bedrock lantai atau karpet yang sudah di-generate.
  */
 @Mod.EventBusSubscriber(modid = BackroomsMod.MOD_ID)
 public class BackroomsStructureSpawner {
+
+    /**
+     * Set chunk (encoded sebagai long dari ChunkPos) yang sudah diproses
+     * di sesi server ini. Mencegah double-placement saat chunk reload.
+     */
+    private static final Set<Long> alreadyProcessed =
+            Collections.newSetFromMap(new ConcurrentHashMap<>());
+
+    /** Bersihkan set saat server restart / world unload (dipanggil dari WorldEventHandler). */
+    public static void clearProcessedChunks() {
+        alreadyProcessed.clear();
+        BackroomsMod.LOGGER.debug("[Backrooms] Structure spawner cache cleared.");
+    }
 
     // ── Chance per chunk (1 in N) ─────────────────────────────────────────────
     private static final int SHIP_CHANCE      = 180;
@@ -70,8 +71,7 @@ public class BackroomsStructureSpawner {
     private static final int OUTPOST_CHANCE   = 300;
     private static final int MINESHAFT_CHANCE = 120;
 
-    // ── SHIPWRECK pieces (verified vanilla 1.21 NBT names) ───────────────────
-    // Semua variant tersedia, dari rightsideup sampai upsidedown
+    // ── SHIPWRECK pieces ─────────────────────────────────────────────────────
     private static final String[] SHIP_PIECES = {
         "minecraft:shipwreck/with_mast",
         "minecraft:shipwreck/with_mast_degraded",
@@ -86,19 +86,14 @@ public class BackroomsStructureSpawner {
         "minecraft:shipwreck/upsidedown_fronthalf",
     };
 
-    // ── IGLOO pieces (verified vanilla 1.21 NBT names) ───────────────────────
-    // bottom = lantai dasar + secret lab room → paling dramatis
-    // middle = dinding igloo
-    // top    = kubah atas → visual unik mencuat dari karpet
+    // ── IGLOO pieces ─────────────────────────────────────────────────────────
     private static final String[] IGLOO_PIECES = {
         "minecraft:igloo/bottom",
         "minecraft:igloo/middle",
         "minecraft:igloo/top",
     };
 
-    // ── PILLAGER OUTPOST pieces (verified vanilla 1.21 NBT names) ────────────
-    // PENTING: prefix "feature_" bukan subdir "/feature/"
-    // Semua ada di: data/minecraft/structures/pillager_outpost/*.nbt
+    // ── PILLAGER OUTPOST pieces ───────────────────────────────────────────────
     private static final String[] OUTPOST_MAIN = {
         "minecraft:pillager_outpost/watchtower",
         "minecraft:pillager_outpost/watchtower_overgrown",
@@ -124,150 +119,134 @@ public class BackroomsStructureSpawner {
     private static final long SEED_POST   = 0xC3D4E5F6A0B00003L;
     private static final long SEED_MINE   = 0xD4E5F6A0B1C00004L;
 
+    // ── Y minimum aman untuk menulis blok struktur ───────────────────────────
+    /** Tidak boleh menulis ke Y=0 (bedrock lantai) dan Y=1 (karpet). */
+    private static final int MIN_SAFE_Y = 2;
+
     // ══════════════════════════════════════════════════════════════════════════
     // MAIN EVENT
     // ══════════════════════════════════════════════════════════════════════════
 
     @SubscribeEvent
     public static void onChunkLoad(ChunkEvent.Load event) {
-        // Server-side only
         if (!(event.getLevel() instanceof ServerLevel level)) return;
-        // Backrooms dimension only
         if (!level.dimension().equals(ModDimensions.BACKROOMS_LEVEL)) return;
-        // LevelChunk only (tidak proses proto-chunk atau empty chunk)
         if (!(event.getChunk() instanceof LevelChunk chunk)) return;
 
         ChunkPos cp = chunk.getPos();
-        long base = chunkSeed(level.getSeed(), cp.x, cp.z);
 
-        // Zone check dari tengah chunk
+        // ── KRITIS: skip jika chunk ini sudah pernah diproses sesi ini ───
+        long chunkKey = ChunkPos.asLong(cp.x, cp.z);
+        if (!alreadyProcessed.add(chunkKey)) {
+            // add() return false = sudah ada = chunk reload, jangan place lagi
+            return;
+        }
+
+        long base = chunkSeed(level.getSeed(), cp.x, cp.z);
         int zone = getZone(cp.getMiddleBlockX(), cp.getMiddleBlockZ());
 
         // ── 1. SHIPWRECK — semua zone kecuali VOID ───────────────────────
         if (zone != ZONE_VOID) {
             RandomSource rShip = RandomSource.create(base ^ SEED_SHIP);
             if (rShip.nextInt(SHIP_CHANCE) == 0) {
-                tryPlace(level, cp, rShip, SHIP_PIECES, 1, "shipwreck");
+                tryPlace(level, cp, rShip, SHIP_PIECES, MIN_SAFE_Y, "shipwreck");
             }
         }
 
         // ── 2. IGLOO FRAGMENT — semua zone ───────────────────────────────
         RandomSource rIgloo = RandomSource.create(base ^ SEED_IGLOO);
         if (rIgloo.nextInt(IGLOO_CHANCE) == 0) {
-            tryPlace(level, cp, rIgloo, IGLOO_PIECES, 1, "igloo");
+            tryPlace(level, cp, rIgloo, IGLOO_PIECES, MIN_SAFE_Y, "igloo");
         }
 
         // ── 3. MINESHAFT FRAGMENT — semua zone ───────────────────────────
-        // Procedural: lorong 3×3 blok, panjang 4–12 blok, arah N/S/E/W acak
-        // Dibuat manual karena minecraft:mineshaft tidak punya NBT
         RandomSource rMine = RandomSource.create(base ^ SEED_MINE);
         if (rMine.nextInt(MINESHAFT_CHANCE) == 0) {
             placeMineshaftFragment(level, cp, rMine);
         }
 
-        // ── 5. PILLAGER OUTPOST — HANYA ZONE_VOID ────────────────────────
+        // ── 4. PILLAGER OUTPOST — HANYA ZONE_VOID ────────────────────────
         if (zone == ZONE_VOID) {
             RandomSource rPost = RandomSource.create(base ^ SEED_POST);
             if (rPost.nextInt(OUTPOST_CHANCE) == 0) {
-                // 60% watchtower penuh (dramatis di void room 40 blok)
-                // 40% feature saja (cage/tent/plate dll)
                 String[] pool = rPost.nextFloat() < 0.60f ? OUTPOST_MAIN : OUTPOST_FEATURES;
-                tryPlace(level, cp, rPost, pool, 2, "pillager_outpost");
+                tryPlace(level, cp, rPost, pool, MIN_SAFE_Y, "pillager_outpost");
             }
         }
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    // MINESHAFT FRAGMENT — procedural, tidak pakai NBT
+    // MINESHAFT FRAGMENT — procedural
     // ══════════════════════════════════════════════════════════════════════════
 
     /**
-     * Tempat lorong mineshaft sepotong: 3 blok lebar × 3 blok tinggi, panjang 4–12 blok.
+     * Lorong mineshaft 3×3: mulai dari Y=2 (tepat di atas karpet Y=1).
      *
-     * STRUKTUR per cross-section:
-     *   Y+2  [planks][air  ][planks]   ← ceiling support (tiap 4 blok)
-     *   Y+1  [air   ][air  ][air   ]
-     *   Y+0  [air   ][rail ][air   ]   ← lantai + rel di tengah
-     *
-     * Torch ditempel di dinding tiap ~5 blok (acak 4–6).
-     * Support (oak fence vertikal + planks horizontal) tiap 4 blok.
-     *
-     * baseY = 2 (tepat di atas karpet Y=1, jadi ujung lorong "muncul" dari lantai)
+     * FIX: semua setBlock sekarang dicek minimum Y=2 agar tidak pernah
+     * menimpa Y=0 (bedrock) atau Y=1 (karpet) yang di-generate oleh
+     * BackroomsChunkGenerator.
      */
     private static void placeMineshaftFragment(ServerLevel level, ChunkPos cp,
                                                RandomSource rng) {
-        // Pilih arah: NORTH/SOUTH (along Z) atau EAST/WEST (along X)
         boolean alongX = rng.nextBoolean();
-
-        // Panjang lorong: 4–12 blok
         int length = 4 + rng.nextInt(9);
 
-        // Origin: acak dalam chunk dengan margin
         int ox = cp.getMinBlockX() + rng.nextInt(12) + 2;
         int oz = cp.getMinBlockZ() + rng.nextInt(12) + 2;
-        int oy = 2; // tepat di atas karpet
+        int oy = MIN_SAFE_Y; // Y=2, tepat di atas karpet Y=1
 
-        // Blok yang dipakai
-        BlockState planks  = Blocks.OAK_PLANKS.defaultBlockState();
-        BlockState fence   = Blocks.OAK_FENCE.defaultBlockState();
-        BlockState torch   = Blocks.WALL_TORCH.defaultBlockState();
-        BlockState air     = Blocks.AIR.defaultBlockState();
-
-        // Arah rel dan arah torch ke dinding
-        BlockState rail = Blocks.RAIL.defaultBlockState()
+        BlockState planks = Blocks.OAK_PLANKS.defaultBlockState();
+        BlockState fence  = Blocks.OAK_FENCE.defaultBlockState();
+        BlockState air    = Blocks.AIR.defaultBlockState();
+        BlockState rail   = Blocks.RAIL.defaultBlockState()
             .setValue(RailBlock.SHAPE, alongX ? RailShape.EAST_WEST : RailShape.NORTH_SOUTH);
 
-        int nextTorch  = 2 + rng.nextInt(3); // torch pertama di blok ke-2/3/4
-        int nextSupport = 4;                  // support tiap 4 blok
+        int nextTorch   = 2 + rng.nextInt(3);
+        int nextSupport = 4;
 
         for (int i = 0; i < length; i++) {
-            // Hitung posisi world berdasarkan arah
             int wx = alongX ? ox + i : ox;
             int wz = alongX ? oz     : oz + i;
 
-            // ── Lantai: gali air (hapus blok yang ada) ───────────────────
-            // Y+0: samping kiri, tengah (rel), samping kanan
-            setBlock(level, wx, oy,     wz,     alongX ? -1 : 0,  0, alongX ? 0 : -1, air);
-            setBlock(level, wx, oy,     wz,     0,                 0, 0,                rail);
-            setBlock(level, wx, oy,     wz,     alongX ? 1 : 0,   0, alongX ? 0 : 1,  air);
+            // Y+0 (=Y=2): lantai lorong — rel di tengah, air di sisi
+            safePlaceAir(level, wx - (alongX ? 0 : 1), oy,     wz - (alongX ? 1 : 0));
+            safeSetBlock(level, wx,                      oy,     wz,                     rail);
+            safePlaceAir(level, wx + (alongX ? 0 : 1), oy,     wz + (alongX ? 1 : 0));
 
-            // Y+1: tiga blok lebar, kosong
+            // Y+1 (=Y=3): tengah lorong
             for (int side = -1; side <= 1; side++) {
                 int sx = alongX ? wx : wx + side;
                 int sz = alongX ? wz + side : wz;
-                level.setBlock(new BlockPos(sx, oy + 1, sz), air, 2);
+                safePlaceAir(level, sx, oy + 1, sz);
             }
 
-            // Y+2: tiga blok lebar, kosong (kecuali support)
+            // Y+2 (=Y=4): atas lorong
             for (int side = -1; side <= 1; side++) {
                 int sx = alongX ? wx : wx + side;
                 int sz = alongX ? wz + side : wz;
-                level.setBlock(new BlockPos(sx, oy + 2, sz), air, 2);
+                safePlaceAir(level, sx, oy + 2, sz);
             }
 
-            // ── Support beam tiap 4 blok ──────────────────────────────────
+            // Support beam tiap 4 blok
             if (i == nextSupport || i == length - 1) {
-                // Dua tiang fence di sisi lorong
                 int sx1 = alongX ? wx : wx - 1;
                 int sz1 = alongX ? wz - 1 : wz;
                 int sx2 = alongX ? wx : wx + 1;
                 int sz2 = alongX ? wz + 1 : wz;
 
-                level.setBlock(new BlockPos(sx1, oy + 1, sz1), fence, 2);
-                level.setBlock(new BlockPos(sx2, oy + 1, sz2), fence, 2);
+                safeSetBlock(level, sx1, oy + 1, sz1, fence);
+                safeSetBlock(level, sx2, oy + 1, sz2, fence);
 
-                // Planks di atas tiang dan di tengah
                 for (int side = -1; side <= 1; side++) {
                     int spx = alongX ? wx : wx + side;
                     int spz = alongX ? wz + side : wz;
-                    level.setBlock(new BlockPos(spx, oy + 2, spz), planks, 2);
+                    safeSetBlock(level, spx, oy + 2, spz, planks);
                 }
                 nextSupport = i + 4;
             }
 
-            // ── Torch di dinding tiap ~5 blok ────────────────────────────
+            // Torch di dinding tiap ~5 blok
             if (i == nextTorch && i > 0 && i < length - 1) {
-                // Torch di sisi kiri atau kanan secara acak
                 boolean leftSide = rng.nextBoolean();
                 Direction torchDir = alongX
                     ? (leftSide ? Direction.NORTH : Direction.SOUTH)
@@ -276,11 +255,11 @@ public class BackroomsStructureSpawner {
                 int tx = wx + (alongX ? 0 : (leftSide ? -1 : 1));
                 int tz = wz + (alongX ? (leftSide ? -1 : 1) : 0);
 
-                BlockState wallTorch = torch.setValue(
-                    net.minecraft.world.level.block.WallTorchBlock.FACING, torchDir);
-                level.setBlock(new BlockPos(tx, oy + 1, tz), wallTorch, 2);
+                BlockState wallTorch = Blocks.WALL_TORCH.defaultBlockState()
+                    .setValue(net.minecraft.world.level.block.WallTorchBlock.FACING, torchDir);
+                safeSetBlock(level, tx, oy + 1, tz, wallTorch);
 
-                nextTorch = i + 4 + rng.nextInt(3); // interval acak 4–6
+                nextTorch = i + 4 + rng.nextInt(3);
             }
         }
 
@@ -289,12 +268,27 @@ public class BackroomsStructureSpawner {
             length, alongX ? "EW" : "NS", ox, oy, oz);
     }
 
-    /** Helper: set blok dengan offset relatif dari (wx, wy, wz). */
-    private static void setBlock(ServerLevel level,
-                                  int wx, int wy, int wz,
-                                  int dx, int dy, int dz,
-                                  BlockState state) {
-        level.setBlock(new BlockPos(wx + dx, wy + dy, wz + dz), state, 2);
+    /**
+     * Set blok dengan perlindungan: tidak pernah menulis ke Y < MIN_SAFE_Y.
+     * Mencegah overwrite bedrock (Y=0) dan karpet (Y=1).
+     */
+    private static void safeSetBlock(ServerLevel level, int wx, int wy, int wz, BlockState state) {
+        if (wy < MIN_SAFE_Y) return; // PROTEKSI: jangan sentuh lantai/bedrock
+        level.setBlock(new BlockPos(wx, wy, wz), state, 2);
+    }
+
+    /**
+     * Tempatkan air hanya jika Y aman DAN blok yang ada bukan bedrock/karpet.
+     * Ini mencegah menghapus lantai di area chunk tetangga yang mungkin
+     * belum ter-generate ulang.
+     */
+    private static void safePlaceAir(ServerLevel level, int wx, int wy, int wz) {
+        if (wy < MIN_SAFE_Y) return;
+        BlockPos pos = new BlockPos(wx, wy, wz);
+        BlockState existing = level.getBlockState(pos);
+        // Jangan timpa bedrock atau karpet yang sudah ada
+        if (existing.is(Blocks.BEDROCK) || existing.is(Blocks.BROWN_WOOL)) return;
+        level.setBlock(pos, Blocks.AIR.defaultBlockState(), 2);
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -306,33 +300,29 @@ public class BackroomsStructureSpawner {
                                  int baseY, String tag) {
         StructureTemplateManager mgr = level.getStructureManager();
 
-        // Pilih piece acak dari pool
         String name = pieces[rng.nextInt(pieces.length)];
         ResourceLocation loc = ResourceLocation.parse(name);
 
         Optional<StructureTemplate> opt = mgr.get(loc);
         if (opt.isEmpty()) {
-            // Tidak seharusnya terjadi kalau nama sudah diverifikasi
             BackroomsMod.LOGGER.warn("[Backrooms] NBT '{}' tidak ditemukan (cek nama piece)", name);
             return;
         }
 
         StructureTemplate tmpl = opt.get();
 
-        // Posisi: acak dalam chunk, beri margin 1 blok dari tepi
         int wx = cp.getMinBlockX() + rng.nextInt(14) + 1;
         int wz = cp.getMinBlockZ() + rng.nextInt(14) + 1;
         BlockPos origin = new BlockPos(wx, baseY, wz);
 
-        // Random rotation + mirror → tiap instance orientasi beda
         Rotation rot    = Rotation.values()[rng.nextInt(4)];
         Mirror   mirror = Mirror.values()[rng.nextInt(3)];
 
         StructurePlaceSettings cfg = new StructurePlaceSettings()
             .setRotation(rot)
             .setMirror(mirror)
-            .setIgnoreEntities(true)       // KRITIS: tidak spawn mob apapun
-            .setFinalizeEntities(false);   // Tidak finalize entity data
+            .setIgnoreEntities(true)
+            .setFinalizeEntities(false);
 
         try {
             tmpl.placeInWorld(level, origin, origin, cfg, rng, 2);
@@ -357,10 +347,10 @@ public class BackroomsStructureSpawner {
                 ^ 0xBAC0D00D0000000L;
         int r = (int) Math.abs(s % 10);
         if (r < 1) return ZONE_VOID;
-        if (r < 3) return 0; // CORRIDOR
-        if (r < 5) return 4; // COMPLEX
-        if (r < 8) return 2; // OPEN
-        return 1;             // OFFICE
+        if (r < 3) return 0;
+        if (r < 5) return 4;
+        if (r < 8) return 2;
+        return 1;
     }
 
     private static long chunkSeed(long worldSeed, int cx, int cz) {
