@@ -50,19 +50,32 @@ public class BackroomsStructureSpawner {
     /** Y minimum untuk placement — tidak boleh menyentuh bedrock Y=0 atau karpet Y=1 */
     private static final int BASE_Y = 2;
 
-    // ── SHIPWRECK pieces ─────────────────────────────────────────────────────
+    // ── SHIPWRECK pieces (verified Minecraft Wiki 1.21 — semua 20 variants) ───
     private static final String[] SHIP_PIECES = {
-        "minecraft:shipwreck/with_mast",
-        "minecraft:shipwreck/with_mast_degraded",
-        "minecraft:shipwreck/rightsideup_full",
-        "minecraft:shipwreck/rightsideup_full_degraded",
+        // rightsideup (6 variants)
+        "minecraft:shipwreck/rightsideup_backhalf",
+        "minecraft:shipwreck/rightsideup_backhalf_degraded",
         "minecraft:shipwreck/rightsideup_fronthalf",
         "minecraft:shipwreck/rightsideup_fronthalf_degraded",
+        "minecraft:shipwreck/rightsideup_full",
+        "minecraft:shipwreck/rightsideup_full_degraded",
+        // sideways (6 variants)
+        "minecraft:shipwreck/sideways_backhalf",
+        "minecraft:shipwreck/sideways_backhalf_degraded",
+        "minecraft:shipwreck/sideways_fronthalf",
+        "minecraft:shipwreck/sideways_fronthalf_degraded",
         "minecraft:shipwreck/sideways_full",
         "minecraft:shipwreck/sideways_full_degraded",
-        "minecraft:shipwreck/sideways_fronthalf",
-        "minecraft:shipwreck/upsidedown_full",
+        // upsidedown (6 variants)
+        "minecraft:shipwreck/upsidedown_backhalf",
+        "minecraft:shipwreck/upsidedown_backhalf_degraded",
         "minecraft:shipwreck/upsidedown_fronthalf",
+        "minecraft:shipwreck/upsidedown_fronthalf_degraded",
+        "minecraft:shipwreck/upsidedown_full",
+        "minecraft:shipwreck/upsidedown_full_degraded",
+        // with mast (2 variants)
+        "minecraft:shipwreck/with_mast",
+        "minecraft:shipwreck/with_mast_degraded",
     };
 
     // ── IGLOO pieces ─────────────────────────────────────────────────────────
