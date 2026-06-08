@@ -147,6 +147,13 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
             return;
         }
 
+        // Kalau zone ini bukan void tapi berbatasan langsung dengan pintu void,
+        // ikuti ketinggian void agar lorong tidak ketutup di bawah.
+        if (isAdjacentToVoidDoor(wx, wz)) {
+            fillVoidColumn(chunk, pos, wx, wz);
+            return;
+        }
+
         boolean solid = isSolid(wx, wz, zone);
 
         // Lantai & atap selalu ada
@@ -170,6 +177,82 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
             set(chunk, pos, wx, Y_WALL_3, wz, BLK_AIR);
             set(chunk, pos, wx, Y_CEIL,   wz, isLamp(wx, wz) ? BLK_LAMP : BLK_CEIL);
         }
+    }
+
+    /**
+     * Cek apakah kolom (wx,wz) berada di zona transisi dengan ZONE_VOID di region sebelah.
+     * Digunakan agar lorong pintu antara ZONE_VOID dan zone lain ikut tinggi void
+     * sehingga tidak ketutup di bawah.
+     *
+     * Logika: jika posisi ini bukan ZONE_VOID, tapi berada di tepian region
+     * yang berbatasan langsung dengan region ZONE_VOID, DAN posisi ini
+     * adalah posisi "pintu void" di region tetangga, kembalikan true.
+     */
+    private boolean isAdjacentToVoidDoor(int wx, int wz) {
+        // Cek 4 region tetangga: barat, timur, utara, selatan
+        // Tepian barat region saat ini (lx == 0) → berbatasan dengan region rx-1 (tepian timur lx==47)
+        int lx = Math.floorMod(wx, REGION_SIZE);
+        int lz = Math.floorMod(wz, REGION_SIZE);
+        int rx = Math.floorDiv(wx, REGION_SIZE);
+        int rz = Math.floorDiv(wz, REGION_SIZE);
+
+        // Cek apakah kita di 2 blok paling timur region (lx==46,47) → berbatasan dengan region rx+1
+        if (lx >= REGION_SIZE - 2) {
+            int nrx = rx + 1;
+            if (getZoneByRegion(nrx, rz) == ZONE_VOID) {
+                // Cek apakah lz ini adalah posisi pintu di region tetangga
+                int mid = REGION_SIZE / 2;
+                if (lz == mid || lz == mid - 1 || lz == mid + 1 || lz == mid - 2) {
+                    long s = wallSeed(nrx, rz, 0, REGION_SIZE); // sisi barat region tetangga
+                    if (Math.abs(s % 100) < 80) return true; // ada pintu
+                }
+            }
+        }
+        // Cek apakah kita di 2 blok paling barat region (lx==0,1) → berbatasan dengan region rx-1
+        if (lx <= 1) {
+            int nrx = rx - 1;
+            if (getZoneByRegion(nrx, rz) == ZONE_VOID) {
+                int mid = REGION_SIZE / 2;
+                if (lz == mid || lz == mid - 1 || lz == mid + 1 || lz == mid - 2) {
+                    long s = wallSeed(nrx, rz, 1, REGION_SIZE); // sisi timur region tetangga
+                    if (Math.abs(s % 100) < 80) return true;
+                }
+            }
+        }
+        // Cek apakah kita di 2 blok paling selatan region (lz==46,47) → berbatasan dengan region rz+1
+        if (lz >= REGION_SIZE - 2) {
+            int nrz = rz + 1;
+            if (getZoneByRegion(rx, nrz) == ZONE_VOID) {
+                int mid = REGION_SIZE / 2;
+                if (lx == mid || lx == mid - 1 || lx == mid + 1 || lx == mid - 2) {
+                    long s = wallSeed(rx, nrz, 2, REGION_SIZE); // sisi utara region tetangga
+                    if (Math.abs(s % 100) < 80) return true;
+                }
+            }
+        }
+        // Cek apakah kita di 2 blok paling utara region (lz==0,1) → berbatasan dengan region rz-1
+        if (lz <= 1) {
+            int nrz = rz - 1;
+            if (getZoneByRegion(rx, nrz) == ZONE_VOID) {
+                int mid = REGION_SIZE / 2;
+                if (lx == mid || lx == mid - 1 || lx == mid + 1 || lx == mid - 2) {
+                    long s = wallSeed(rx, nrz, 3, REGION_SIZE); // sisi selatan region tetangga
+                    if (Math.abs(s % 100) < 80) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** Versi getZone yang menerima indeks region langsung (bukan koordinat world). */
+    private int getZoneByRegion(int rx, int rz) {
+        long s = regionSeed(rx, rz);
+        int r = (int) Math.abs(s % 10);
+        if (r < 1) return ZONE_VOID;
+        if (r < 3) return ZONE_CORRIDOR;
+        if (r < 5) return ZONE_COMPLEX;
+        if (r < 8) return ZONE_OPEN;
+        return ZONE_OFFICE;
     }
 
     /**
@@ -244,10 +327,21 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
         int lx  = Math.floorMod(wx, REGION_SIZE);   // 0..47
         int lz  = Math.floorMod(wz, REGION_SIZE);   // 0..47
 
-        boolean onWestEdge  = (lx == 0);
-        boolean onEastEdge  = (lx == REGION_SIZE - 1);
-        boolean onNorthEdge = (lz == 0);
-        boolean onSouthEdge = (lz == REGION_SIZE - 1);
+        // Dinding void 2 blok tebal agar tidak ada celah antar region:
+        // Sisi barat:  lx == 0 atau lx == 1
+        // Sisi timur:  lx == REGION_SIZE-1 atau lx == REGION_SIZE-2
+        // Sisi utara:  lz == 0 atau lz == 1
+        // Sisi selatan: lz == REGION_SIZE-1 atau lz == REGION_SIZE-2
+        boolean onWestEdge  = (lx == 0 || lx == 1);
+        boolean onEastEdge  = (lx == REGION_SIZE - 1 || lx == REGION_SIZE - 2);
+        boolean onNorthEdge = (lz == 0 || lz == 1);
+        boolean onSouthEdge = (lz == REGION_SIZE - 1 || lz == REGION_SIZE - 2);
+
+        // Gunakan lx==0/lx==REGION_SIZE-1 sebagai "tepian luar" untuk logika pintu
+        boolean onOuterWest  = (lx == 0);
+        boolean onOuterEast  = (lx == REGION_SIZE - 1);
+        boolean onOuterNorth = (lz == 0);
+        boolean onOuterSouth = (lz == REGION_SIZE - 1);
 
         boolean onEdgeX = onWestEdge  || onEastEdge;
         boolean onEdgeZ = onNorthEdge || onSouthEdge;
@@ -260,22 +354,26 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
 
         // Tepian X (dinding barat/timur): cek apakah ada pintu di posisi lz ini
         if (onEdgeX) {
-            // Pintu selebar 2 blok di tengah sisi (lz ≈ 23-24)
+            // Pintu selebar 4 blok di tengah sisi agar muat 2 blok dinding tebal
             int mid = REGION_SIZE / 2;
-            boolean isDoorPos = (lz == mid || lz == mid - 1);
+            boolean isDoorPos = (lz == mid || lz == mid - 1 || lz == mid + 1 || lz == mid - 2);
             if (!isDoorPos) return true;
-            // Pilih apakah sisi ini punya pintu (seed dari region + sisi)
-            int side = onWestEdge ? 0 : 1;
-            long s = wallSeed(rx, rz, side, REGION_SIZE);
+            // Seed berdasarkan tepian luar saja agar kedua layer dinding sinkron
+            int side = (onOuterWest || onWestEdge) ? 0 : 1;
+            // Sinkronkan seed: pakai rx dari region yang "memiliki" dinding ini
+            // Dinding barat (lx==0,1) → seed dari region ini
+            // Dinding timur (lx==46,47) → seed dari region ini juga
+            int seedRx = onWestEdge ? rx : rx;
+            long s = wallSeed(seedRx, rz, side, REGION_SIZE);
             return (Math.abs(s % 100) >= 80); // 80% ada pintu → 20% solid
         }
 
         // Tepian Z (dinding utara/selatan): cek apakah ada pintu di posisi lx ini
         if (onEdgeZ) {
             int mid = REGION_SIZE / 2;
-            boolean isDoorPos = (lx == mid || lx == mid - 1);
+            boolean isDoorPos = (lx == mid || lx == mid - 1 || lx == mid + 1 || lx == mid - 2);
             if (!isDoorPos) return true;
-            int side = onNorthEdge ? 2 : 3;
+            int side = (onOuterNorth || onNorthEdge) ? 2 : 3;
             long s = wallSeed(rx, rz, side, REGION_SIZE);
             return (Math.abs(s % 100) >= 80);
         }
