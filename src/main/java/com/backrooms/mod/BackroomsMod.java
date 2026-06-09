@@ -6,6 +6,7 @@ import com.backrooms.mod.command.BackroomsCommand;
 import com.backrooms.mod.command.BackroomsLocateCommand;
 import com.backrooms.mod.dimension.ModDimensions;
 import com.backrooms.mod.event.NullZoneEventHandler;
+import com.backrooms.mod.network.ModNetwork;
 import com.backrooms.mod.world.BackroomsChunkGeneratorType;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.common.MinecraftForge;
@@ -49,6 +50,7 @@ public class BackroomsMod {
     }
 
     private void commonSetup(FMLCommonSetupEvent event) {
+        event.enqueueWork(ModNetwork::register);
         LOGGER.info("[Backrooms] Initialized. The humming begins...");
     }
 
