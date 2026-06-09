@@ -122,16 +122,17 @@ public class BackroomsCommand {
 
         // Tentukan koordinat tujuan
         int destX = (x != null) ? x : player.getBlockX();
-        int destY = (y != null) ? y : (int) Y_SPAWN;
         int destZ = (z != null) ? z : player.getBlockZ();
 
-        // Pastikan area landing aman
-        BackroomsTeleporter.ensureSafeRoom(server, destX, 1, destZ);
+        // Cari lantai solid — menghormati lubang pitfalls, tidak nulis blok
+        int floorY = (y != null) ? y - 1 : BackroomsTeleporter.findSafeFloorY(server, destX, destZ);
+        double spawnY = floorY + 1.0;
+        int destY = (int) spawnY;
 
         // Buat transition
         DimensionTransition transition = new DimensionTransition(
                 server,
-                new Vec3(destX + 0.5, Y_SPAWN, destZ + 0.5),
+                new Vec3(destX + 0.5, spawnY, destZ + 0.5),
                 Vec3.ZERO,
                 player.getYRot(),
                 player.getXRot(),

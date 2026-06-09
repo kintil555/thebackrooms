@@ -129,13 +129,14 @@ public class BackroomsLocateCommand {
         int distBlok = (int) Math.sqrt(
             Math.pow(destX - startX, 2) + Math.pow(destZ - startZ, 2));
 
-        // Pastikan area aman
-        BackroomsTeleporter.ensureSafeRoom(backrooms, destX, 1, destZ);
+        // Cari lantai solid tanpa nulis blok
+        int floorY = BackroomsTeleporter.findSafeFloorY(backrooms, destX, destZ);
+        double spawnY = floorY + 1.0;
 
         // Teleport
         DimensionTransition transition = new DimensionTransition(
             backrooms,
-            new Vec3(destX + 0.5, Y_SPAWN, destZ + 0.5),
+            new Vec3(destX + 0.5, spawnY, destZ + 0.5),
             Vec3.ZERO,
             player.getYRot(),
             player.getXRot(),
@@ -148,12 +149,12 @@ public class BackroomsLocateCommand {
         player.sendSystemMessage(Component.literal(
             "§b§l[LOCATE] §r§7Zone §e" + label + "§7 ditemukan."));
         player.sendSystemMessage(Component.literal(
-            "§7Koordinat: §f" + destX + ", " + (int)Y_SPAWN + ", " + destZ +
+            "§7Koordinat: §f" + destX + ", " + (int)spawnY + ", " + destZ +
             " §7(§f" + distBlok + " blok§7 dari titik awal)"));
 
         source.sendSuccess(() -> Component.literal(
             "§a[Backrooms] Teleported ke §e" + label +
-            "§a @ §7" + destX + ", " + (int)Y_SPAWN + ", " + destZ), true);
+            "§a @ §7" + destX + ", " + (int)spawnY + ", " + destZ), true);
 
         BackroomsMod.LOGGER.info(
             "[Backrooms] /backrooms locate {} → ({},{}) jarak {} blok",
