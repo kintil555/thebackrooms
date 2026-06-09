@@ -266,38 +266,70 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
      */
     private void fillPitfallsColumn(ChunkAccess chunk, BlockPos.MutableBlockPos pos,
                                     int wx, int wz) {
-        boolean wall   = isSolidPitfalls(wx, wz);   // dinding hanya di tepi region
-        boolean pit    = !wall && isPitfall(wx, wz); // lubang di area terbuka
+        // Y constants khusus pitfalls — lantai dinaikkan agar lubang 4 blok dalam
+        //   Y=0        : deepslate (dasar lubang, gelap)
+        //   Y=1..3     : udara dalam lubang (4 blok total termasuk Y=0 terlihat)
+        //   Y=4        : karpet / baseboard (lantai permukaan)
+        //   Y=5        : baseboard (cut sandstone) hanya di dinding
+        //   Y=6..8     : stripped oak log (dinding)
+        //   Y=9        : ceiling (smooth stone / lamp)
+        //   Y=10       : bedrock atap
+        final int PF_DEEP_FLOOR = 0;   // dasar lubang — deepslate
+        final int PF_PIT_TOP    = 3;   // Y teratas yang masih lubang (4 blok: 0,1,2,3)
+        final int PF_CARPET     = 4;   // lantai permukaan
+        final int PF_BASE       = 5;   // baseboard dinding
+        final int PF_WALL_BOT   = 6;   // dinding bawah
+        final int PF_WALL_MID   = 7;   // dinding tengah
+        final int PF_WALL_TOP   = 8;   // dinding atas
+        final int PF_CEIL       = 9;   // ceiling
+        final int PF_ROOF       = 10;  // bedrock atap
 
-        set(chunk, pos, wx, Y_BASE, wz, BLK_BEDROCK);
-        set(chunk, pos, wx, Y_ROOF, wz, BLK_BEDROCK);
+        boolean wall = isSolidPitfalls(wx, wz);
+        boolean pit  = !wall && isPitfall(wx, wz);
+
+        // Bedrock atap selalu ada
+        set(chunk, pos, wx, PF_ROOF, wz, BLK_BEDROCK);
+        // Y=11..63 juga bedrock
+        for (int y = PF_ROOF + 1; y < 64; y++) {
+            set(chunk, pos, wx, y, wz, BLK_BEDROCK);
+        }
 
         if (wall) {
-            // ── DINDING OFFICE BIASA ──────────────────────────────────────
-            set(chunk, pos, wx, Y_CARPET, wz, BLK_BASE);
-            set(chunk, pos, wx, Y_BASE2,  wz, BLK_BASE);
-            set(chunk, pos, wx, Y_WALL_1, wz, BLK_WALL);
-            set(chunk, pos, wx, Y_WALL_2, wz, BLK_WALL);
-            set(chunk, pos, wx, Y_WALL_3, wz, BLK_WALL);
-            set(chunk, pos, wx, Y_CEIL,   wz, BLK_WALL);
+            // ── DINDING TEPI — penuh dari bawah sampai ceiling ───────────
+            set(chunk, pos, wx, PF_DEEP_FLOOR, wz, BLK_BEDROCK);
+            set(chunk, pos, wx, 1,             wz, BLK_BASE);
+            set(chunk, pos, wx, 2,             wz, BLK_BASE);
+            set(chunk, pos, wx, 3,             wz, BLK_BASE);
+            set(chunk, pos, wx, PF_CARPET,     wz, BLK_BASE);
+            set(chunk, pos, wx, PF_BASE,       wz, BLK_BASE);
+            set(chunk, pos, wx, PF_WALL_BOT,   wz, BLK_WALL);
+            set(chunk, pos, wx, PF_WALL_MID,   wz, BLK_WALL);
+            set(chunk, pos, wx, PF_WALL_TOP,   wz, BLK_WALL);
+            set(chunk, pos, wx, PF_CEIL,       wz, BLK_WALL);
         } else if (pit) {
-            // ── PITFALL — lubang terbuka, Y=0 deepslate gelap (kesan dalam)
-            // Y=0 deepslate, Y=1..5 udara, ceiling tetap ada di Y=6
-            set(chunk, pos, wx, Y_BASE,   wz, Blocks.DEEPSLATE.defaultBlockState());
-            set(chunk, pos, wx, Y_CARPET, wz, BLK_AIR);
-            set(chunk, pos, wx, Y_BASE2,  wz, BLK_AIR);
-            set(chunk, pos, wx, Y_WALL_1, wz, BLK_AIR);
-            set(chunk, pos, wx, Y_WALL_2, wz, BLK_AIR);
-            set(chunk, pos, wx, Y_WALL_3, wz, BLK_AIR);
-            set(chunk, pos, wx, Y_CEIL,   wz, isLamp(wx, wz) ? BLK_LAMP : BLK_CEIL);
+            // ── LUBANG — deepslate di dasar, 4 blok udara terbuka ────────
+            set(chunk, pos, wx, PF_DEEP_FLOOR, wz, Blocks.DEEPSLATE.defaultBlockState());
+            set(chunk, pos, wx, 1,             wz, BLK_AIR);
+            set(chunk, pos, wx, 2,             wz, BLK_AIR);
+            set(chunk, pos, wx, PF_PIT_TOP,    wz, BLK_AIR); // Y=3, rata dengan lantai sekitar
+            set(chunk, pos, wx, PF_CARPET,     wz, BLK_AIR); // Y=4, terbuka di permukaan
+            set(chunk, pos, wx, PF_BASE,       wz, BLK_AIR);
+            set(chunk, pos, wx, PF_WALL_BOT,   wz, BLK_AIR);
+            set(chunk, pos, wx, PF_WALL_MID,   wz, BLK_AIR);
+            set(chunk, pos, wx, PF_WALL_TOP,   wz, BLK_AIR);
+            set(chunk, pos, wx, PF_CEIL,       wz, isLamp(wx, wz) ? BLK_LAMP : BLK_CEIL);
         } else {
-            // ── LANTAI NORMAL — karpet rata ───────────────────────────────
-            set(chunk, pos, wx, Y_CARPET, wz, BLK_CARPET);
-            set(chunk, pos, wx, Y_BASE2,  wz, BLK_AIR);
-            set(chunk, pos, wx, Y_WALL_1, wz, BLK_AIR);
-            set(chunk, pos, wx, Y_WALL_2, wz, BLK_AIR);
-            set(chunk, pos, wx, Y_WALL_3, wz, BLK_AIR);
-            set(chunk, pos, wx, Y_CEIL,   wz, isLamp(wx, wz) ? BLK_LAMP : BLK_CEIL);
+            // ── LANTAI NORMAL ─────────────────────────────────────────────
+            set(chunk, pos, wx, PF_DEEP_FLOOR, wz, BLK_BEDROCK);
+            set(chunk, pos, wx, 1,             wz, BLK_BEDROCK);
+            set(chunk, pos, wx, 2,             wz, BLK_BEDROCK);
+            set(chunk, pos, wx, 3,             wz, BLK_BEDROCK);
+            set(chunk, pos, wx, PF_CARPET,     wz, BLK_CARPET);
+            set(chunk, pos, wx, PF_BASE,       wz, BLK_AIR);
+            set(chunk, pos, wx, PF_WALL_BOT,   wz, BLK_AIR);
+            set(chunk, pos, wx, PF_WALL_MID,   wz, BLK_AIR);
+            set(chunk, pos, wx, PF_WALL_TOP,   wz, BLK_AIR);
+            set(chunk, pos, wx, PF_CEIL,       wz, isLamp(wx, wz) ? BLK_LAMP : BLK_CEIL);
         }
     }
 
@@ -760,7 +792,7 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
                 Direction facing = westEdge ? Direction.EAST : Direction.WEST;
                 // 50% fake door (tembok di baliknya), 50% pintu normal
                 boolean fake = (Math.abs((s >> 8) % 100) < 50);
-                placeDoor(level, wx, 1, wz, facing, fake, s);
+                placeDoor(level, wx, 4, wz, facing, fake, s);
             }
         }
 
@@ -770,7 +802,7 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
             if (Math.abs(s % 100) < 80) {
                 Direction facing = northEdge ? Direction.SOUTH : Direction.NORTH;
                 boolean fake = (Math.abs((s >> 8) % 100) < 50);
-                placeDoor(level, wx, 1, wz, facing, fake, s);
+                placeDoor(level, wx, 4, wz, facing, fake, s);
             }
         }
     }
