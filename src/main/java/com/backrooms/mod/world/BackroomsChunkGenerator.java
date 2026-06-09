@@ -6,7 +6,11 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.WorldGenRegion;
 import net.minecraft.world.level.*;
 import net.minecraft.world.level.biome.*;
+import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.DoorBlock;
+import net.minecraft.world.level.block.state.properties.DoorHingeSide;
+import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.ChunkGenerator;
@@ -668,9 +672,142 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
     @Override
     public void applyBiomeDecoration(WorldGenLevel level, ChunkAccess chunk,
                                      StructureManager structureManager) {
-        // Ambil world seed dari ServerLevel
         long seed = level.getSeed();
         BackroomsStructureSpawner.decorate(level, chunk, seed);
+        placePitfallsDoors(level, chunk);
+    }
+
+    /**
+     * Tempatkan pintu di dinding ZONE_PITFALLS.
+     *
+     * Setiap sisi region punya 1 slot pintu di tengah (lebar 2 blok, tinggi 2 blok).
+     * Pintu OAK ditempatkan di slot itu.
+     *
+     * Variasi (per seed region+sisi):
+     *   - 50% → pintu ke ruangan sebelah (bukaan normal, isSolidPitfalls sudah buat gap)
+     *   - 50% → pintu ke tembok solid (fake door — buka tapi di baliknya tembok)
+     *
+     * Fake door: blok di balik pintu adalah BLK_WALL (stripped oak log) → kesan aneh
+     * seperti pintu yang tidak menuju kemana-mana, persis seperti referensi Backrooms.
+     *
+     * Pintu ditempatkan di Y=1 (lower half) dan Y=2 (upper half), menghadap ke dalam.
+     * Hanya di-place jika chunk ini memiliki tepian region pitfalls.
+     */
+    private void placePitfallsDoors(WorldGenLevel level, ChunkAccess chunk) {
+        ChunkPos cp = chunk.getPos();
+        int minX = cp.getMinBlockX();
+        int minZ = cp.getMinBlockZ();
+        int maxX = cp.getMaxBlockX();
+        int maxZ = cp.getMaxBlockZ();
+
+        // Hitung rentang region yang chunk ini sentuh
+        int rxMin = Math.floorDiv(minX, REGION_SIZE);
+        int rxMax = Math.floorDiv(maxX, REGION_SIZE);
+        int rzMin = Math.floorDiv(minZ, REGION_SIZE);
+        int rzMax = Math.floorDiv(maxZ, REGION_SIZE);
+
+        for (int rx = rxMin; rx <= rxMax; rx++) {
+            for (int rz = rzMin; rz <= rzMax; rz++) {
+                // Cek apakah region ini ZONE_PITFALLS
+                long rs = regionSeed(rx, rz);
+                int r = (int) Math.abs(rs % 20);
+                if (!(r >= 2 && r < 4)) continue; // bukan ZONE_PITFALLS
+
+                int mid = REGION_SIZE / 2;
+                // Anchor 4 sisi: (lx=0, lz=mid-2), (lx=47, lz=mid-2),
+                //                (lx=mid-2, lz=0), (lx=mid-2, lz=47)
+                int[][] anchors = {
+                    { rx * REGION_SIZE,                    rz * REGION_SIZE + mid - 2 }, // barat
+                    { rx * REGION_SIZE + REGION_SIZE - 1,  rz * REGION_SIZE + mid - 2 }, // timur
+                    { rx * REGION_SIZE + mid - 2,          rz * REGION_SIZE            }, // utara
+                    { rx * REGION_SIZE + mid - 2,          rz * REGION_SIZE + REGION_SIZE - 1 }, // selatan
+                };
+                for (int[] a : anchors) {
+                    int ax = a[0], az = a[1];
+                    // Hanya place jika anchor ini ada di dalam chunk ini
+                    if (ax >= minX && ax <= maxX && az >= minZ && az <= maxZ) {
+                        tryPlacePitfallDoor(level, ax, az);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Coba tempatkan pintu di posisi (wx, wz) jika posisi ini adalah
+     * titik tengah slot pintu di tepian region pitfalls.
+     * Hanya 1 blok per slot yang jadi "anchor" pintu (lx==mid-2 DAN di tepian).
+     */
+    private void tryPlacePitfallDoor(WorldGenLevel level, int wx, int wz) {
+        int rx  = Math.floorDiv(wx, REGION_SIZE);
+        int rz  = Math.floorDiv(wz, REGION_SIZE);
+        int lx  = Math.floorMod(wx, REGION_SIZE);
+        int lz  = Math.floorMod(wz, REGION_SIZE);
+
+        int mid = REGION_SIZE / 2;
+
+        // Cek apakah ini anchor blok pintu di sisi X (dinding barat/timur)
+        // Anchor = lx==0 (barat) atau lx==47 (timur), lz == mid-2 (kiri slot pintu)
+        boolean westEdge = (lx == 0);
+        boolean eastEdge = (lx == REGION_SIZE - 1);
+        boolean northEdge = (lz == 0);
+        boolean southEdge = (lz == REGION_SIZE - 1);
+
+        if ((westEdge || eastEdge) && lz == mid - 2) {
+            int side = westEdge ? 0 : 1;
+            long s = wallSeed(rx, rz, side, REGION_SIZE);
+            if (Math.abs(s % 100) < 80) { // 80% sisi ini punya pintu
+                Direction facing = westEdge ? Direction.EAST : Direction.WEST;
+                // 50% fake door (tembok di baliknya), 50% pintu normal
+                boolean fake = (Math.abs((s >> 8) % 100) < 50);
+                placeDoor(level, wx, 1, wz, facing, fake, s);
+            }
+        }
+
+        if ((northEdge || southEdge) && lx == mid - 2) {
+            int side = northEdge ? 2 : 3;
+            long s = wallSeed(rx, rz, side, REGION_SIZE);
+            if (Math.abs(s % 100) < 80) {
+                Direction facing = northEdge ? Direction.SOUTH : Direction.NORTH;
+                boolean fake = (Math.abs((s >> 8) % 100) < 50);
+                placeDoor(level, wx, 1, wz, facing, fake, s);
+            }
+        }
+    }
+
+    /** Tempatkan 1 pintu oak (2 blok tinggi) di posisi yang diberikan. */
+    private void placeDoor(WorldGenLevel level, int wx, int wy, int wz,
+                           Direction facing, boolean fake, long seed) {
+        BlockState doorLower = Blocks.OAK_DOOR.defaultBlockState()
+            .setValue(DoorBlock.FACING, facing)
+            .setValue(DoorBlock.HALF, DoubleBlockHalf.LOWER)
+            .setValue(DoorBlock.HINGE, DoorHingeSide.LEFT)
+            .setValue(DoorBlock.OPEN, false)
+            .setValue(DoorBlock.POWERED, false);
+
+        BlockState doorUpper = doorLower
+            .setValue(DoorBlock.HALF, DoubleBlockHalf.UPPER);
+
+        BlockPos posLower = new BlockPos(wx, wy, wz);
+        BlockPos posUpper = posLower.above();
+
+        level.setBlock(posLower, doorLower, 3);
+        level.setBlock(posUpper, doorUpper, 3);
+
+        // Fake door: blok tepat di balik pintu adalah stripped oak (tembok)
+        // sehingga saat dibuka hanya ada tembok — efek aneh khas Backrooms
+        if (fake) {
+            Direction behind = facing.getOpposite();
+            BlockPos behindPos = posLower.relative(behind);
+            BlockPos behindUp  = behindPos.above();
+            // Hanya tulis jika saat ini air (jangan timpa blok solid lain)
+            if (level.getBlockState(behindPos).isAir()) {
+                level.setBlock(behindPos, BLK_WALL, 3);
+            }
+            if (level.getBlockState(behindUp).isAir()) {
+                level.setBlock(behindUp, BLK_WALL, 3);
+            }
+        }
     }
 
     @Override
