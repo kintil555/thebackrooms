@@ -3,17 +3,15 @@ package com.backrooms.mod.network;
 import com.backrooms.mod.client.NoclipOverlayRenderer;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.event.network.CustomPayloadEvent;
 import net.minecraftforge.fml.DistExecutor;
-import net.minecraftforge.network.NetworkEvent;
-
-import java.util.function.Supplier;
 
 /**
  * Packet server → client: trigger overlay glitch noclip.
- * durationTicks: berapa lama overlay tampil (default 80).
  *
- * Handler pakai Supplier<NetworkEvent.Context> — API yang berlaku di Forge 1.21.1.
- * PlayPayloadContext tidak ada di Forge (itu NeoForge API).
+ * Forge 1.21.1: handler pakai BiConsumer<MSG, CustomPayloadEvent.Context>
+ * NetworkEvent dan NetworkEvent.Context TIDAK ADA di Forge 1.21.1.
+ * Gantinya: net.minecraftforge.event.network.CustomPayloadEvent.Context
  */
 public class NoclipOverlayPacket {
 
@@ -31,10 +29,8 @@ public class NoclipOverlayPacket {
         return new NoclipOverlayPacket(buf.readInt());
     }
 
-    public static void handle(NoclipOverlayPacket msg, Supplier<NetworkEvent.Context> ctxSupplier) {
-        NetworkEvent.Context ctx = ctxSupplier.get();
+    public static void handle(NoclipOverlayPacket msg, CustomPayloadEvent.Context ctx) {
         ctx.enqueueWork(() ->
-            // DistExecutor memastikan ini hanya jalan di physical CLIENT
             DistExecutor.unsafeRunWhenOn(Dist.CLIENT,
                 () -> () -> NoclipOverlayRenderer.trigger(msg.durationTicks))
         );

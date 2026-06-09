@@ -8,9 +8,10 @@ import net.minecraftforge.network.SimpleChannel;
 /**
  * Registry untuk semua packet jaringan mod Backrooms.
  *
- * Menggunakan ChannelBuilder (Forge 1.21.1 API).
- * Handler menggunakan consumer() dengan Supplier<NetworkEvent.Context>
- * — bukan consumerMainThread (yang butuh PlayPayloadContext dari NeoForge).
+ * Forge 1.21.1: consumer() menerima BiConsumer<MSG, CustomPayloadEvent.Context>
+ * — bukan BiConsumer<MSG, Supplier<NetworkEvent.Context>> seperti versi lama.
+ * Source diverifikasi dari:
+ *   MinecraftForge/1.21.1/src/.../network/SimpleChannel.java
  */
 public class ModNetwork {
 
@@ -24,10 +25,10 @@ public class ModNetwork {
             .simpleChannel();
 
     public static void register() {
-        CHANNEL.messageBuilder(NoclipOverlayPacket.class, 0)
+        CHANNEL.messageBuilder(NoclipOverlayPacket.class)
                 .encoder(NoclipOverlayPacket::encode)
                 .decoder(NoclipOverlayPacket::decode)
-                .consumer(NoclipOverlayPacket::handle)   // pakai consumer(), bukan consumerMainThread()
+                .consumerMainThread(NoclipOverlayPacket::handle)
                 .add();
     }
 }
