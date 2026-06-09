@@ -1,0 +1,11 @@
+{
+  "backrooms.ambient.ambience": {
+    "category": "ambient",
+    "sounds": [
+      {
+        "name": "backrooms:ambient/ambience",
+        "stream": true
+      }
+    ]
+  }
+}

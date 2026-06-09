@@ -1,6 +1,7 @@
 package com.backrooms.mod;
 
 import com.backrooms.mod.block.ModBlocks;
+import com.backrooms.mod.sound.ModSounds;
 import com.backrooms.mod.command.BackroomsCommand;
 import com.backrooms.mod.command.BackroomsLocateCommand;
 import com.backrooms.mod.dimension.ModDimensions;
@@ -28,6 +29,7 @@ public class BackroomsMod {
 
         ModBlocks.BLOCKS.register(modEventBus);
         ModBlocks.ITEMS.register(modEventBus);
+        ModSounds.SOUNDS.register(modEventBus);
 
         BackroomsChunkGeneratorType.register(modEventBus);
 
