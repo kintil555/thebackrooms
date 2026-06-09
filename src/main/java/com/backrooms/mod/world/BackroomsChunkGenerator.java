@@ -307,12 +307,14 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
             set(chunk, pos, wx, PF_WALL_TOP,   wz, BLK_WALL);
             set(chunk, pos, wx, PF_CEIL,       wz, BLK_WALL);
         } else if (pit) {
-            // ── LUBANG — deepslate di dasar, 4 blok udara terbuka ────────
-            set(chunk, pos, wx, PF_DEEP_FLOOR, wz, Blocks.DEEPSLATE.defaultBlockState());
+            // ── LUBANG — void total, tidak ada blok dari Y=0 sampai Y=8 ──
+            // Y=0 dibiarkan kosong (void gelap, min_y dimensi) → terlihat hitam pekat
+            // Lubang 5 blok dalam: Y=0 void, Y=1-4 udara, terbuka di permukaan Y=4
+            set(chunk, pos, wx, PF_DEEP_FLOOR, wz, BLK_AIR); // Y=0 — void
             set(chunk, pos, wx, 1,             wz, BLK_AIR);
             set(chunk, pos, wx, 2,             wz, BLK_AIR);
-            set(chunk, pos, wx, PF_PIT_TOP,    wz, BLK_AIR); // Y=3, rata dengan lantai sekitar
-            set(chunk, pos, wx, PF_CARPET,     wz, BLK_AIR); // Y=4, terbuka di permukaan
+            set(chunk, pos, wx, PF_PIT_TOP,    wz, BLK_AIR);
+            set(chunk, pos, wx, PF_CARPET,     wz, BLK_AIR); // Y=4 terbuka di permukaan
             set(chunk, pos, wx, PF_BASE,       wz, BLK_AIR);
             set(chunk, pos, wx, PF_WALL_BOT,   wz, BLK_AIR);
             set(chunk, pos, wx, PF_WALL_MID,   wz, BLK_AIR);
