@@ -262,7 +262,7 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
      */
     private void fillPitfallsColumn(ChunkAccess chunk, BlockPos.MutableBlockPos pos,
                                     int wx, int wz) {
-        boolean wall   = isSolidOffice(wx, wz);   // dinding luar ruangan
+        boolean wall   = isSolidPitfalls(wx, wz);   // dinding hanya di tepi region
         boolean pit    = !wall && isPitfall(wx, wz); // lubang di area terbuka
 
         set(chunk, pos, wx, Y_BASE, wz, BLK_BEDROCK);
@@ -315,14 +315,14 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
      * persis seperti referensi (lubang kotak seragam, grid bersih).
      */
     private boolean isPitfall(int wx, int wz) {
-        // Period 5: 3 blok lubang + 2 blok jembatan
-        final int PERIOD  = 5;
+        // Period 4: 3 blok lubang + 1 blok jembatan (persis seperti referensi)
+        final int PERIOD  = 4;
         final int PIT_LEN = 3;
 
         int gx = Math.floorMod(wx, PERIOD);
         int gz = Math.floorMod(wz, PERIOD);
 
-        // Lubang jika kedua sumbu berada di zona pit (0,1,2)
+        // Lubang jika kedua sumbu di zona pit (0,1,2); posisi 3 = jembatan
         return gx < PIT_LEN && gz < PIT_LEN;
     }
 
@@ -478,7 +478,47 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
      * ZONE_OFFICE — grid 6 blok, ruangan standar backrooms.
      * 70% segmen punya pintu.
      */
-    private boolean isSolidOffice(int wx, int wz) {
+    /**
+     * ZONE_PITFALLS — tembok hanya di tepi region 48×48, interior bersih total.
+     * Sama seperti isSolidVoid tapi tinggi normal (Y=6 ceiling, bukan Y=40).
+     * Tidak ada grid tembok di dalam — agar lubang pitfall terlihat bersih rapi.
+     * Pintu 4 blok di tengah tiap sisi (80% chance terbuka).
+     */
+    private boolean isSolidPitfalls(int wx, int wz) {
+        int rx  = Math.floorDiv(wx, REGION_SIZE);
+        int rz  = Math.floorDiv(wz, REGION_SIZE);
+        int lx  = Math.floorMod(wx, REGION_SIZE);
+        int lz  = Math.floorMod(wz, REGION_SIZE);
+
+        boolean onWestEdge  = (lx == 0);
+        boolean onEastEdge  = (lx == REGION_SIZE - 1);
+        boolean onNorthEdge = (lz == 0);
+        boolean onSouthEdge = (lz == REGION_SIZE - 1);
+
+        boolean onEdgeX = onWestEdge  || onEastEdge;
+        boolean onEdgeZ = onNorthEdge || onSouthEdge;
+
+        if (!onEdgeX && !onEdgeZ) return false;  // interior → bersih
+        if (onEdgeX && onEdgeZ)   return true;   // sudut → solid
+
+        if (onEdgeX) {
+            int mid = REGION_SIZE / 2;
+            boolean isDoor = (lz >= mid - 2 && lz <= mid + 1); // 4 blok
+            if (!isDoor) return true;
+            int side = onWestEdge ? 0 : 1;
+            long s = wallSeed(rx, rz, side, REGION_SIZE);
+            return (Math.abs(s % 100) >= 80);
+        }
+        // onEdgeZ
+        int mid = REGION_SIZE / 2;
+        boolean isDoor = (lx >= mid - 2 && lx <= mid + 1);
+        if (!isDoor) return true;
+        int side = onNorthEdge ? 2 : 3;
+        long s = wallSeed(rx, rz, side, REGION_SIZE);
+        return (Math.abs(s % 100) >= 80);
+    }
+
+        private boolean isSolidOffice(int wx, int wz) {
         final int G = 6;
         int gx = Math.floorMod(wx, G);
         int gz = Math.floorMod(wz, G);
