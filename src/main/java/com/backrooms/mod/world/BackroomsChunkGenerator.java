@@ -322,11 +322,11 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
             set(chunk, pos, wx, PF_CEIL,       wz, isLamp(wx, wz) ? BLK_LAMP : BLK_CEIL);
         } else {
             // ── LANTAI NORMAL ─────────────────────────────────────────────
-            set(chunk, pos, wx, PF_DEEP_FLOOR, wz, BLK_BEDROCK);
-            set(chunk, pos, wx, 1,             wz, BLK_BEDROCK);
-            set(chunk, pos, wx, 2,             wz, BLK_BEDROCK);
-            set(chunk, pos, wx, 3,             wz, BLK_BEDROCK);
-            set(chunk, pos, wx, PF_CARPET,     wz, BLK_CARPET);
+            set(chunk, pos, wx, PF_DEEP_FLOOR, wz, BLK_CARPET); // Y=0 wool
+            set(chunk, pos, wx, 1,             wz, BLK_CARPET); // Y=1 wool
+            set(chunk, pos, wx, 2,             wz, BLK_CARPET); // Y=2 wool
+            set(chunk, pos, wx, 3,             wz, BLK_CARPET); // Y=3 wool
+            set(chunk, pos, wx, PF_CARPET,     wz, BLK_CARPET); // Y=4 permukaan
             set(chunk, pos, wx, PF_BASE,       wz, BLK_AIR);
             set(chunk, pos, wx, PF_WALL_BOT,   wz, BLK_AIR);
             set(chunk, pos, wx, PF_WALL_MID,   wz, BLK_AIR);
