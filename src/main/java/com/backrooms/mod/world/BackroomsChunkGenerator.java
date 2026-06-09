@@ -296,12 +296,12 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
 
         if (wall) {
             // ── DINDING TEPI — penuh dari bawah sampai ceiling ───────────
-            set(chunk, pos, wx, PF_DEEP_FLOOR, wz, BLK_BEDROCK);
-            set(chunk, pos, wx, 1,             wz, BLK_BASE);
-            set(chunk, pos, wx, 2,             wz, BLK_BASE);
-            set(chunk, pos, wx, 3,             wz, BLK_BASE);
-            set(chunk, pos, wx, PF_CARPET,     wz, BLK_BASE);
-            set(chunk, pos, wx, PF_BASE,       wz, BLK_BASE);
+            set(chunk, pos, wx, PF_DEEP_FLOOR, wz, BLK_CARPET); // Y=0 brown wool
+            set(chunk, pos, wx, 1,             wz, BLK_CARPET); // Y=1 brown wool
+            set(chunk, pos, wx, 2,             wz, BLK_CARPET); // Y=2 brown wool
+            set(chunk, pos, wx, 3,             wz, BLK_CARPET); // Y=3 brown wool
+            set(chunk, pos, wx, PF_CARPET,     wz, BLK_BASE);   // Y=4 baseboard
+            set(chunk, pos, wx, PF_BASE,       wz, BLK_BASE);   // Y=5 baseboard
             set(chunk, pos, wx, PF_WALL_BOT,   wz, BLK_WALL);
             set(chunk, pos, wx, PF_WALL_MID,   wz, BLK_WALL);
             set(chunk, pos, wx, PF_WALL_TOP,   wz, BLK_WALL);
