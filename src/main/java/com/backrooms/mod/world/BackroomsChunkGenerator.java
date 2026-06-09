@@ -277,8 +277,9 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
             set(chunk, pos, wx, Y_WALL_3, wz, BLK_WALL);
             set(chunk, pos, wx, Y_CEIL,   wz, BLK_WALL);
         } else if (pit) {
-            // ── PITFALL — lubang terbuka, langit-langit tetap ada ─────────
-            // Y=1..5 = udara (bisa jatuh)
+            // ── PITFALL — lubang terbuka, Y=0 deepslate gelap (kesan dalam)
+            // Y=0 deepslate, Y=1..5 udara, ceiling tetap ada di Y=6
+            set(chunk, pos, wx, Y_BASE,   wz, Blocks.DEEPSLATE.defaultBlockState());
             set(chunk, pos, wx, Y_CARPET, wz, BLK_AIR);
             set(chunk, pos, wx, Y_BASE2,  wz, BLK_AIR);
             set(chunk, pos, wx, Y_WALL_1, wz, BLK_AIR);
@@ -299,43 +300,30 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
     /**
      * Apakah posisi (wx,wz) merupakan lubang pitfall?
      *
-     * Algoritma:
-     * 1. Hitung "cluster region" 16×16. Per cluster, seed menentukan apakah
-     *    cluster ini aktif (~60% aktif) dan offset grid-nya (0 atau 1 blok shift).
-     * 2. Di dalam cluster aktif, lubang muncul di posisi grid 3-blok:
-     *    setiap 3 blok → 2 blok lubang, 1 blok "jembatan" (karpet solid).
-     *    Jadi pola: PIT PIT SOLID PIT PIT SOLID PIT PIT SOLID …
-     *    Ini persis seperti foto referensi: lubang 2×2 dipisah jembatan 1 blok.
-     * 3. "Jembatan" selebar 1 blok di sumbu X dan Z agar tetap bisa melewati,
-     *    tapi harus hati-hati (mirip Room 14D di Kane Pixels).
+     * Pola: lubang 3×3, jembatan 2 blok antar lubang.
+     * Grid period = 3+2 = 5 blok.
+     *
+     * Dalam setiap "sel" 5 blok:
+     *   posisi 0,1,2 = lubang
+     *   posisi 3,4   = jembatan (karpet solid, bisa lewat)
+     *
+     * Sehingga di kedua sumbu X dan Z:
+     *   PIT PIT PIT SOLID SOLID | PIT PIT PIT SOLID SOLID | ...
+     * Dan lubang terbentuk hanya jika KEDUANYA di zona pit → kotak 3×3 rapi.
+     *
+     * Tidak ada randomness — pola ini konsisten di seluruh zone pitfalls,
+     * persis seperti referensi (lubang kotak seragam, grid bersih).
      */
     private boolean isPitfall(int wx, int wz) {
-        // Cluster region 16×16
-        final int CR = 16;
-        int crx = Math.floorDiv(wx, CR);
-        int crz = Math.floorDiv(wz, CR);
+        // Period 5: 3 blok lubang + 2 blok jembatan
+        final int PERIOD  = 5;
+        final int PIT_LEN = 3;
 
-        // Seed cluster: tentukan apakah cluster ini aktif
-        long cs = ((long) crx * 0x6C62272E07BB0142L)
-                ^ ((long) crz * 0xD1B54A32D192ED03L)
-                ^ 0xC0FFEE00DEADBEAFL;
-        // ~60% cluster aktif punya lubang
-        if (Math.abs(cs % 100) >= 60) return false;
+        int gx = Math.floorMod(wx, PERIOD);
+        int gz = Math.floorMod(wz, PERIOD);
 
-        // Offset kecil per cluster agar tidak terlalu simetris (0 atau 1)
-        int offX = (int) Math.abs((cs >> 8) % 2);
-        int offZ = (int) Math.abs((cs >> 16) % 2);
-
-        // Posisi lokal dalam cluster
-        int lx = Math.floorMod(wx + offX, CR);
-        int lz = Math.floorMod(wz + offZ, CR);
-
-        // Pola grid 3 blok: posisi 0,1 = lubang; posisi 2 = jembatan
-        int gx = Math.floorMod(lx, 3);
-        int gz = Math.floorMod(lz, 3);
-
-        // Lubang hanya di 2×2 pertama tiap sel grid (bukan di jembatan)
-        return gx != 2 && gz != 2;
+        // Lubang jika kedua sumbu berada di zona pit (0,1,2)
+        return gx < PIT_LEN && gz < PIT_LEN;
     }
 
     /**
