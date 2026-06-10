@@ -19,8 +19,8 @@ import java.util.UUID;
 @Mod.EventBusSubscriber(modid = BackroomsMod.MOD_ID)
 public class RandomNoclipHandler {
 
-    private static final int DELAY_TICKS            = 60;
-    private static final int OVERLAY_DURATION_TICKS = 80;
+    private static final int DELAY_TICKS            = 80;   // 4 detik = sync dengan overlay
+    private static final int OVERLAY_DURATION_TICKS = 80;   // 4 detik overlay glitch
     private static final double SINK_SPEED          = -0.18;
 
     private static final Map<UUID, Integer> pendingTeleport = new HashMap<>();

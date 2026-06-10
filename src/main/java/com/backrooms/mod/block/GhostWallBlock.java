@@ -17,9 +17,13 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 
 public class GhostWallBlock extends Block {
 
-    // Y=1 = lantai karpet. Player spawn berdiri di atasnya → Y=2.0
+    // Y=1 = lantai karpet. Y=6 = ceiling zone normal.
     private static final int Y_FLOOR = 1;
-    private static final double Y_SPAWN = 2.0; // tepat di atas karpet
+    // Spawn di Y=5 (1 blok di bawah ceiling zone normal).
+    // Player muncul tepat di bawah langit-langit → jatuh 4 blok ke lantai Y=1 → ~2 HP fall damage.
+    // Di ZONE_VOID (ceiling Y=40), efek fall damage lebih besar karena ruang lebih tinggi —
+    // tapi kita spawn dari Y tetap agar tidak menembus ceiling di zone normal.
+    private static final double Y_SPAWN = 5.0;
 
     public GhostWallBlock(Properties properties) {
         super(properties);
@@ -61,13 +65,22 @@ public class GhostWallBlock extends Block {
 
         DimensionTransition transition = new DimensionTransition(
                 backroomsLevel,
-                new Vec3(spawnX + 0.5, Y_SPAWN, spawnZ + 0.5), // Y=2.0 tepat di atas karpet
+                new Vec3(spawnX + 0.5, Y_SPAWN, spawnZ + 0.5), // spawn dekat ceiling
                 Vec3.ZERO,
                 player.getYRot(),
                 player.getXRot(),
                 DimensionTransition.DO_NOTHING
         );
+
+        // Teleport player ke backrooms
         player.changeDimension(transition);
+
+        // Paksa fall distance sehingga saat landing Minecraft hitung fall damage.
+        // Y_SPAWN - Y_FLOOR - 3 (Minecraft mulai damage setelah 3 blok jatuh) = jarak efektif.
+        // Set ke nilai yang lebih besar agar fall damage terasa (sekitar 3–6 HP).
+        // resetFallDistance() dulu agar bersih, lalu set manual.
+        player.resetFallDistance();
+        player.fallDistance = (float)(Y_SPAWN - Y_FLOOR); // ~4 blok → damage terjamin saat landing
 
         player.sendSystemMessage(
                 net.minecraft.network.chat.Component.literal("§c§lYou have noclipped out of reality."));
