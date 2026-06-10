@@ -37,6 +37,13 @@ public class NoclipChanceManager {
     }
 
     /**
+     * Sets the multiplier for a player to a specific value.
+     */
+    public static void setMultiplier(UUID uuid, int value) {
+        multipliers.put(uuid, Math.max(1, value));
+    }
+
+    /**
      * Increments the multiplier for a player after a noclip event.
      */
     public static void incrementMultiplier(UUID uuid) {

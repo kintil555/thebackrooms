@@ -4,6 +4,7 @@ import com.backrooms.mod.BackroomsMod;
 import com.backrooms.mod.block.GhostWallBlock;
 import com.backrooms.mod.dimension.ModDimensions;
 import com.backrooms.mod.event.BackroomsTeleporter;
+import com.backrooms.mod.event.NoclipChanceManager;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.context.CommandContext;
@@ -84,6 +85,60 @@ public class BackroomsCommand {
                                 EntityArgument.getPlayers(ctx, "player");
                             return leaveBackroomsMultiple(ctx, targets);
                         })
+                    )
+                )
+
+                // /backrooms noclip ...
+                .then(Commands.literal("noclip")
+
+                    // /backrooms noclip chance <player>  — lihat multiplier saat ini
+                    .then(Commands.literal("chance")
+                        .then(Commands.argument("player", EntityArgument.players())
+                            .executes(ctx -> {
+                                Collection<ServerPlayer> targets =
+                                    EntityArgument.getPlayers(ctx, "player");
+                                return noclipChanceInfo(ctx, targets);
+                            })
+                        )
+                    )
+
+                    // /backrooms noclip set <player> <multiplier>  — set multiplier langsung
+                    .then(Commands.literal("set")
+                        .then(Commands.argument("player", EntityArgument.players())
+                            .then(Commands.argument("multiplier", IntegerArgumentType.integer(1, 1000))
+                                .executes(ctx -> {
+                                    Collection<ServerPlayer> targets =
+                                        EntityArgument.getPlayers(ctx, "player");
+                                    int mult = IntegerArgumentType.getInteger(ctx, "multiplier");
+                                    return noclipSetMultiplier(ctx, targets, mult);
+                                })
+                            )
+                        )
+                    )
+
+                    // /backrooms noclip add <player> <amount>  — tambah multiplier
+                    .then(Commands.literal("add")
+                        .then(Commands.argument("player", EntityArgument.players())
+                            .then(Commands.argument("amount", IntegerArgumentType.integer(1, 1000))
+                                .executes(ctx -> {
+                                    Collection<ServerPlayer> targets =
+                                        EntityArgument.getPlayers(ctx, "player");
+                                    int amount = IntegerArgumentType.getInteger(ctx, "amount");
+                                    return noclipAddMultiplier(ctx, targets, amount);
+                                })
+                            )
+                        )
+                    )
+
+                    // /backrooms noclip reset <player>  — reset multiplier ke 1
+                    .then(Commands.literal("reset")
+                        .then(Commands.argument("player", EntityArgument.players())
+                            .executes(ctx -> {
+                                Collection<ServerPlayer> targets =
+                                    EntityArgument.getPlayers(ctx, "player");
+                                return noclipResetMultiplier(ctx, targets);
+                            })
+                        )
                     )
                 )
         );
@@ -241,5 +296,68 @@ public class BackroomsCommand {
             count += leaveBackrooms(ctx, p);
         }
         return count;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // NOCLIP CHANCE
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private static int noclipChanceInfo(CommandContext<CommandSourceStack> ctx,
+                                         Collection<ServerPlayer> players) {
+        CommandSourceStack source = ctx.getSource();
+        for (ServerPlayer p : players) {
+            int mult  = NoclipChanceManager.getMultiplier(p.getUUID());
+            int denom = NoclipChanceManager.getEffectiveChanceDenominator(p.getUUID());
+            source.sendSuccess(() -> Component.literal(String.format(
+                "§e[Backrooms] §b%s §7— multiplier: §e%dx §7| chance: §e1/%d §7per tick (~%.1f mnt rata-rata)",
+                p.getName().getString(), mult, denom, (denom / 20.0 / 60.0))), false);
+        }
+        return players.size();
+    }
+
+    private static int noclipSetMultiplier(CommandContext<CommandSourceStack> ctx,
+                                            Collection<ServerPlayer> players, int multiplier) {
+        CommandSourceStack source = ctx.getSource();
+        for (ServerPlayer p : players) {
+            NoclipChanceManager.setMultiplier(p.getUUID(), multiplier);
+            int denom = NoclipChanceManager.getEffectiveChanceDenominator(p.getUUID());
+            source.sendSuccess(() -> Component.literal(String.format(
+                "§a[Backrooms] Set noclip multiplier §e%s §a→ §e%dx §7(1/%d per tick)",
+                p.getName().getString(), multiplier, denom)), true);
+            BackroomsMod.LOGGER.info("[Backrooms] noclip multiplier {} set to {}x by {}",
+                p.getName().getString(), multiplier, source.getTextName());
+        }
+        return players.size();
+    }
+
+    private static int noclipAddMultiplier(CommandContext<CommandSourceStack> ctx,
+                                            Collection<ServerPlayer> players, int amount) {
+        CommandSourceStack source = ctx.getSource();
+        for (ServerPlayer p : players) {
+            int before = NoclipChanceManager.getMultiplier(p.getUUID());
+            int after  = before + amount;
+            NoclipChanceManager.setMultiplier(p.getUUID(), after);
+            int denom  = NoclipChanceManager.getEffectiveChanceDenominator(p.getUUID());
+            source.sendSuccess(() -> Component.literal(String.format(
+                "§a[Backrooms] §e%s §amultiplier §7%d §a→ §e%dx §7(1/%d per tick)",
+                p.getName().getString(), before, after, denom)), true);
+            BackroomsMod.LOGGER.info("[Backrooms] noclip multiplier {} {}→{}x by {}",
+                p.getName().getString(), before, after, source.getTextName());
+        }
+        return players.size();
+    }
+
+    private static int noclipResetMultiplier(CommandContext<CommandSourceStack> ctx,
+                                              Collection<ServerPlayer> players) {
+        CommandSourceStack source = ctx.getSource();
+        for (ServerPlayer p : players) {
+            NoclipChanceManager.resetMultiplier(p.getUUID());
+            source.sendSuccess(() -> Component.literal(String.format(
+                "§a[Backrooms] Noclip multiplier §e%s §adireset ke §e1x §7(chance default).",
+                p.getName().getString())), true);
+            BackroomsMod.LOGGER.info("[Backrooms] noclip multiplier {} reset by {}",
+                p.getName().getString(), source.getTextName());
+        }
+        return players.size();
     }
 }

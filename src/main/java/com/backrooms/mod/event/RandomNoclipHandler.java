@@ -55,6 +55,7 @@ public class RandomNoclipHandler {
     private static void triggerNoclip(ServerPlayer player) {
         pendingTeleport.put(player.getUUID(), DELAY_TICKS);
         player.noPhysics = true;
+        NoclipChanceManager.incrementMultiplier(player.getUUID());
         ModNetwork.CHANNEL.send(
                 new NoclipOverlayPacket(OVERLAY_DURATION_TICKS),
                 PacketDistributor.PLAYER.with(player)
