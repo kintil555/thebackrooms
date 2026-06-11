@@ -1,6 +1,7 @@
 package com.backrooms.mod.event;
 
 import com.backrooms.mod.BackroomsMod;
+import com.backrooms.mod.event.BackroomsNoclipReturnHandler;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
@@ -17,9 +18,9 @@ public class PlayerLifecycleHandler {
     @SubscribeEvent
     public static void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
-        // Reset noPhysics agar tidak permanen kalau player disconnect saat tenggelam
         player.noPhysics = false;
         RandomNoclipHandler.clearPlayer(player.getUUID());
+        BackroomsNoclipReturnHandler.clearPlayer(player.getUUID());
     }
 
     @SubscribeEvent
@@ -27,5 +28,6 @@ public class PlayerLifecycleHandler {
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
         player.noPhysics = false;
         RandomNoclipHandler.clearPlayer(player.getUUID());
+        BackroomsNoclipReturnHandler.clearPlayer(player.getUUID());
     }
 }

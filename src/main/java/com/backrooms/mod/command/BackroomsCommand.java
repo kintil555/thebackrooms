@@ -254,30 +254,9 @@ public class BackroomsCommand {
             return 0;
         }
 
-        // Spawn ke posisi overworld player (atau world spawn jika belum ada)
-        BlockPos spawnPos = player.getRespawnPosition() != null
-                ? player.getRespawnPosition()
-                : overworld.getSharedSpawnPos();
-
-        int destX = spawnPos.getX();
-        int destY = spawnPos.getY();
-        int destZ = spawnPos.getZ();
-
-        DimensionTransition transition = new DimensionTransition(
-                overworld,
-                new Vec3(destX + 0.5, Y_SPAWN, destZ + 0.5),
-                Vec3.ZERO,
-                player.getYRot(),
-                player.getXRot(),
-                DimensionTransition.DO_NOTHING
-        );
-
-        // Reset noPhysics kalau masih aktif dari null zone
-        player.noPhysics = false;
-        player.changeDimension(transition);
-
-        player.sendSystemMessage(Component.literal("§a§lYou have returned to reality."));
-        player.sendSystemMessage(Component.literal("§7§oThe fluorescent humming fades..."));
+        // Gunakan triggerOverworldReturn yang sudah handle safe surface finding
+        // agar player tidak jatuh dari ketinggian, suffocate, atau spawn di air
+        GhostWallBlock.triggerOverworldReturn(player, (ServerLevel) player.level());
 
         String msg = String.format("§a[Backrooms] §e%s §akembali ke Overworld.",
                 player.getName().getString());

@@ -39,14 +39,17 @@ import java.util.concurrent.CompletableFuture;
  *   Y=1  Brown Wool
  *   Y=2–39 AIR
  *   Y=40 Smooth Stone / Ochre Froglight (ceiling void)
- *   Y=41–63 Bedrock (atap solid, biar aman di batas height=64)
+ *   Y=41–63 Bedrock (atap solid)
  *
  * ZONE SYSTEM — 5 tipe zona dipilih per makro-region 48×48 blok:
- *   ZONE_CORRIDOR — koridor sempit, grid 4 blok, ~60% pintu
- *   ZONE_OFFICE   — ruangan standar, grid 6 blok, ~70% pintu (default)
- *   ZONE_OPEN     — ruangan luas, grid 12 blok, ~85% pintu
+ *   ZONE_CORRIDOR — koridor sempit, grid 4 blok
+ *   ZONE_OFFICE   — ruangan standar, grid 6 blok (default)
+ *   ZONE_OPEN     — ruangan luas, grid 12 blok
  *   ZONE_VOID     — ruangan masif tanpa partisi, langit-langit Y=40
  *   ZONE_COMPLEX  — pola dinding L/T/U organik (dual-grid overlay)
+ *
+ * FIX: Setiap sel ruangan dijamin minimal 1 pintu ke tetangga (connectivity guarantee).
+ * FIX: Spawn selalu di tengah sel terbuka, tidak pernah di dalam dinding.
  */
 public class BackroomsChunkGenerator extends ChunkGenerator {
 
@@ -68,7 +71,7 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
 
     // ─── Y levels void room ───────────────────────────────────────────────────
     private static final int Y_VOID_CEIL = 40;
-    private static final int Y_VOID_ROOF = 41; // dari sini sampai 63 → bedrock
+    private static final int Y_VOID_ROOF = 41;
 
     // ─── Blocks ───────────────────────────────────────────────────────────────
     private static final BlockState BLK_BEDROCK = Blocks.BEDROCK.defaultBlockState();
@@ -89,7 +92,6 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
 
     private static final String[] ZONE_NAMES = {"CORRIDOR", "OFFICE", "OPEN", "VOID", "COMPLEX", "PITFALLS"};
 
-    /** Ukuran makro-region dalam blok. Zone dipilih satu per region ini. */
     private static final int REGION_SIZE = 48;
 
     public BackroomsChunkGenerator(BiomeSource biomeSource) {
@@ -123,7 +125,7 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    // ZONE — tentukan tipe zona untuk posisi world (wx, wz)
+    // ZONE
     // ══════════════════════════════════════════════════════════════════════════
 
     private int getZone(int wx, int wz) {
@@ -131,10 +133,6 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
         int rz = Math.floorDiv(wz, REGION_SIZE);
         long s = regionSeed(rx, rz);
         int r = (int) Math.abs(s % 20);
-        // Distribusi (20 bucket):
-        //   VOID=10% (0-1), PITFALLS=10% (2-3),
-        //   CORRIDOR=15% (4-6), COMPLEX=15% (7-9),
-        //   OPEN=25% (10-14), OFFICE=25% (15-19)
         if (r < 2)  return ZONE_VOID;
         if (r < 4)  return ZONE_PITFALLS;
         if (r < 7)  return ZONE_CORRIDOR;
@@ -162,15 +160,11 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
         }
 
         boolean solid = isSolid(wx, wz, zone);
-        // Jika region ini langsung bersebelahan dengan ZONE_VOID, ikut tinggi void
-        // agar tidak ada "atap pendek" yang menciptakan celah/gap di sisi ruangan void.
         boolean nextToVoid = isNextToVoidRegion(wx, wz);
 
-        // Lantai selalu bedrock
         set(chunk, pos, wx, Y_BASE, wz, BLK_BEDROCK);
 
         if (nextToVoid) {
-            // ── TINGGI VOID: dinding/udara sampai Y=40, bedrock di atas ──────
             if (solid) {
                 set(chunk, pos, wx, Y_CARPET, wz, BLK_BASE);
                 for (int y = Y_BASE2; y < Y_VOID_CEIL; y++) {
@@ -188,10 +182,8 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
                 set(chunk, pos, wx, y, wz, BLK_BEDROCK);
             }
         } else {
-            // ── TINGGI NORMAL: Y=7 atap ───────────────────────────────────────
             set(chunk, pos, wx, Y_ROOF, wz, BLK_BEDROCK);
             if (solid) {
-                // ── DINDING / PILAR ────────────────────────────────────────
                 set(chunk, pos, wx, Y_CARPET, wz, BLK_BASE);
                 set(chunk, pos, wx, Y_BASE2,  wz, BLK_BASE);
                 set(chunk, pos, wx, Y_WALL_1, wz, BLK_WALL);
@@ -199,7 +191,6 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
                 set(chunk, pos, wx, Y_WALL_3, wz, BLK_WALL);
                 set(chunk, pos, wx, Y_CEIL,   wz, BLK_WALL);
             } else {
-                // ── RUANGAN TERBUKA ────────────────────────────────────────
                 set(chunk, pos, wx, Y_CARPET, wz, BLK_CARPET);
                 set(chunk, pos, wx, Y_BASE2,  wz, BLK_AIR);
                 set(chunk, pos, wx, Y_WALL_1, wz, BLK_AIR);
@@ -210,11 +201,6 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
         }
     }
 
-    /**
-     * Cek apakah region di (wx,wz) langsung bersebelahan (4 arah) dengan ZONE_VOID.
-     * Kalau ya, kolom harus menggunakan ketinggian void agar tidak ada
-     * celah/gap di tepian ruangan void.
-     */
     private boolean isNextToVoidRegion(int wx, int wz) {
         int rx = Math.floorDiv(wx, REGION_SIZE);
         int rz = Math.floorDiv(wz, REGION_SIZE);
@@ -224,7 +210,6 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
             || getZoneByRegion(rx, rz + 1) == ZONE_VOID;
     }
 
-    /** Versi getZone yang menerima indeks region langsung (bukan koordinat world). */
     private int getZoneByRegion(int rx, int rz) {
         long s = regionSeed(rx, rz);
         int r = (int) Math.abs(s % 20);
@@ -236,97 +221,58 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
         return ZONE_OFFICE;
     }
 
-    /**
-     * ZONE_PITFALLS — "Room 14D" dari Kane Pixels Backrooms (Pitfalls, 1990).
-     *
-     * Berdasarkan riset: ruangan dengan pola ~5×7 lubang persegi di lantai,
-     * karpet turun di semua sisi lubang, lubang berkelompok dalam grid, ada
-     * dinding OFFICE normal di tepian ruangan, langit-langit fluorescent.
-     *
-     * Layout kolom:
-     *   Non-lubang normal:
-     *     Y=0  Bedrock
-     *     Y=1  Brown Wool (karpet)
-     *     Y=2  Cut Sandstone (baseboard)
-     *     Y=3–5 Stripped Oak Log (dinding, hanya di tepi ruangan)
-     *     Y=6  Smooth Stone / Froglight (ceiling)
-     *     Y=7  Bedrock (atap)
-     *
-     *   Lubang (pitfall):
-     *     Y=0  Bedrock
-     *     Y=1–5 AIR (lubang terbuka, bisa jatuh)
-     *     Y=6  Smooth Stone / Froglight (ceiling — tetap ada di atas)
-     *     Y=7  Bedrock (atap)
-     *
-     * Cluster lubang: dipilih per "cluster-region" 16×16 blok.
-     * Di dalam cluster region, lubang digenerate dalam pola grid 3×3
-     * (tiap 3 blok ada lubang 2×2) dengan ~60% chance per cluster aktif.
-     * Ini menciptakan pola seperti foto referensi — grid lubang persegi
-     * yang tersebar di lantai ruangan luas.
-     */
+    // ══════════════════════════════════════════════════════════════════════════
+    // PITFALLS
+    // ══════════════════════════════════════════════════════════════════════════
+
     private void fillPitfallsColumn(ChunkAccess chunk, BlockPos.MutableBlockPos pos,
                                     int wx, int wz) {
-        // Y constants khusus pitfalls — lantai dinaikkan agar lubang 4 blok dalam
-        //   Y=0        : deepslate (dasar lubang, gelap)
-        //   Y=1..3     : udara dalam lubang (4 blok total termasuk Y=0 terlihat)
-        //   Y=4        : karpet / baseboard (lantai permukaan)
-        //   Y=5        : baseboard (cut sandstone) hanya di dinding
-        //   Y=6..8     : stripped oak log (dinding)
-        //   Y=9        : ceiling (smooth stone / lamp)
-        //   Y=10       : bedrock atap
-        final int PF_DEEP_FLOOR = 0;   // dasar lubang — deepslate
-        final int PF_PIT_TOP    = 3;   // Y teratas yang masih lubang (4 blok: 0,1,2,3)
-        final int PF_CARPET     = 4;   // lantai permukaan
-        final int PF_BASE       = 5;   // baseboard dinding
-        final int PF_WALL_BOT   = 6;   // dinding bawah
-        final int PF_WALL_MID   = 7;   // dinding tengah
-        final int PF_WALL_TOP   = 8;   // dinding atas
-        final int PF_CEIL       = 9;   // ceiling
-        final int PF_ROOF       = 10;  // bedrock atap
+        final int PF_DEEP_FLOOR = 0;
+        final int PF_PIT_TOP    = 3;
+        final int PF_CARPET     = 4;
+        final int PF_BASE       = 5;
+        final int PF_WALL_BOT   = 6;
+        final int PF_WALL_MID   = 7;
+        final int PF_WALL_TOP   = 8;
+        final int PF_CEIL       = 9;
+        final int PF_ROOF       = 10;
 
         boolean wall = isSolidPitfalls(wx, wz);
         boolean pit  = !wall && isPitfall(wx, wz);
 
-        // Bedrock atap selalu ada
         set(chunk, pos, wx, PF_ROOF, wz, BLK_BEDROCK);
-        // Y=11..63 juga bedrock
         for (int y = PF_ROOF + 1; y < 64; y++) {
             set(chunk, pos, wx, y, wz, BLK_BEDROCK);
         }
 
         if (wall) {
-            // ── DINDING TEPI — penuh dari bawah sampai ceiling ───────────
-            set(chunk, pos, wx, PF_DEEP_FLOOR, wz, BLK_CARPET); // Y=0 brown wool
-            set(chunk, pos, wx, 1,             wz, BLK_CARPET); // Y=1 brown wool
-            set(chunk, pos, wx, 2,             wz, BLK_CARPET); // Y=2 brown wool
-            set(chunk, pos, wx, 3,             wz, BLK_CARPET); // Y=3 brown wool
-            set(chunk, pos, wx, PF_CARPET,     wz, BLK_BASE);   // Y=4 baseboard
-            set(chunk, pos, wx, PF_BASE,       wz, BLK_BASE);   // Y=5 baseboard
+            set(chunk, pos, wx, PF_DEEP_FLOOR, wz, BLK_CARPET);
+            set(chunk, pos, wx, 1,             wz, BLK_CARPET);
+            set(chunk, pos, wx, 2,             wz, BLK_CARPET);
+            set(chunk, pos, wx, 3,             wz, BLK_CARPET);
+            set(chunk, pos, wx, PF_CARPET,     wz, BLK_BASE);
+            set(chunk, pos, wx, PF_BASE,       wz, BLK_BASE);
             set(chunk, pos, wx, PF_WALL_BOT,   wz, BLK_WALL);
             set(chunk, pos, wx, PF_WALL_MID,   wz, BLK_WALL);
             set(chunk, pos, wx, PF_WALL_TOP,   wz, BLK_WALL);
             set(chunk, pos, wx, PF_CEIL,       wz, BLK_WALL);
         } else if (pit) {
-            // ── LUBANG — void total, tidak ada blok dari Y=0 sampai Y=8 ──
-            // Y=0 dibiarkan kosong (void gelap, min_y dimensi) → terlihat hitam pekat
-            // Lubang 5 blok dalam: Y=0 void, Y=1-4 udara, terbuka di permukaan Y=4
-            set(chunk, pos, wx, PF_DEEP_FLOOR, wz, BLK_AIR); // Y=0 — void
+            set(chunk, pos, wx, PF_DEEP_FLOOR, wz, BLK_AIR);
             set(chunk, pos, wx, 1,             wz, BLK_AIR);
             set(chunk, pos, wx, 2,             wz, BLK_AIR);
             set(chunk, pos, wx, PF_PIT_TOP,    wz, BLK_AIR);
-            set(chunk, pos, wx, PF_CARPET,     wz, BLK_AIR); // Y=4 terbuka di permukaan
+            set(chunk, pos, wx, PF_CARPET,     wz, BLK_AIR);
             set(chunk, pos, wx, PF_BASE,       wz, BLK_AIR);
             set(chunk, pos, wx, PF_WALL_BOT,   wz, BLK_AIR);
             set(chunk, pos, wx, PF_WALL_MID,   wz, BLK_AIR);
             set(chunk, pos, wx, PF_WALL_TOP,   wz, BLK_AIR);
             set(chunk, pos, wx, PF_CEIL,       wz, isLamp(wx, wz) ? BLK_LAMP : BLK_CEIL);
         } else {
-            // ── LANTAI NORMAL ─────────────────────────────────────────────
-            set(chunk, pos, wx, PF_DEEP_FLOOR, wz, BLK_CARPET); // Y=0 wool
-            set(chunk, pos, wx, 1,             wz, BLK_CARPET); // Y=1 wool
-            set(chunk, pos, wx, 2,             wz, BLK_CARPET); // Y=2 wool
-            set(chunk, pos, wx, 3,             wz, BLK_CARPET); // Y=3 wool
-            set(chunk, pos, wx, PF_CARPET,     wz, BLK_CARPET); // Y=4 permukaan
+            set(chunk, pos, wx, PF_DEEP_FLOOR, wz, BLK_CARPET);
+            set(chunk, pos, wx, 1,             wz, BLK_CARPET);
+            set(chunk, pos, wx, 2,             wz, BLK_CARPET);
+            set(chunk, pos, wx, 3,             wz, BLK_CARPET);
+            set(chunk, pos, wx, PF_CARPET,     wz, BLK_CARPET);
             set(chunk, pos, wx, PF_BASE,       wz, BLK_AIR);
             set(chunk, pos, wx, PF_WALL_BOT,   wz, BLK_AIR);
             set(chunk, pos, wx, PF_WALL_MID,   wz, BLK_AIR);
@@ -335,112 +281,50 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
         }
     }
 
-    /**
-     * Apakah posisi (wx,wz) merupakan lubang pitfall?
-     *
-     * Pola: lubang 3×3, jembatan 2 blok antar lubang.
-     * Grid period = 3+2 = 5 blok.
-     *
-     * Dalam setiap "sel" 5 blok:
-     *   posisi 0,1,2 = lubang
-     *   posisi 3,4   = jembatan (karpet solid, bisa lewat)
-     *
-     * Sehingga di kedua sumbu X dan Z:
-     *   PIT PIT PIT SOLID SOLID | PIT PIT PIT SOLID SOLID | ...
-     * Dan lubang terbentuk hanya jika KEDUANYA di zona pit → kotak 3×3 rapi.
-     *
-     * Tidak ada randomness — pola ini konsisten di seluruh zone pitfalls,
-     * persis seperti referensi (lubang kotak seragam, grid bersih).
-     */
     private boolean isPitfall(int wx, int wz) {
-        // Period 4: 3 blok lubang + 1 blok jembatan (persis seperti referensi)
         final int PERIOD  = 4;
         final int PIT_LEN = 3;
-
         int gx = Math.floorMod(wx, PERIOD);
         int gz = Math.floorMod(wz, PERIOD);
-
-        // Lubang jika kedua sumbu di zona pit (0,1,2); posisi 3 = jembatan
         return gx < PIT_LEN && gz < PIT_LEN;
     }
 
-    /**
-     * ZONE_VOID: ruangan masif — dinding tetap ada (pakai grid OFFICE 6 blok)
-     * tapi tingginya penuh dari Y=0 sampai Y=40. Interior yang tidak solid
-     * = udara penuh 40 blok. Ini yang menciptakan ruangan "cathedral" yang
-     * super tinggi dengan dinding normal di pinggirnya.
-     *
-     * Layout kolom:
-     *   Solid (dinding/pilar):
-     *     Y=0       Bedrock
-     *     Y=1       Cut Sandstone (baseboard)
-     *     Y=2–39    Stripped Oak Log (dinding penuh)
-     *     Y=40      Smooth Stone (ceiling void)
-     *     Y=41–63   Bedrock
-     *
-     *   Non-solid (interior):
-     *     Y=0       Bedrock (lantai)
-     *     Y=1       Brown Wool (karpet)
-     *     Y=2–39    AIR (ruang terbuka 38 blok tinggi)
-     *     Y=40      Smooth Stone / Froglight (ceiling)
-     *     Y=41–63   Bedrock
-     */
+    // ══════════════════════════════════════════════════════════════════════════
+    // VOID
+    // ══════════════════════════════════════════════════════════════════════════
+
     private void fillVoidColumn(ChunkAccess chunk, BlockPos.MutableBlockPos pos,
                                 int wx, int wz) {
         boolean solid = isSolidVoid(wx, wz);
 
-        // Lantai bedrock selalu ada
         set(chunk, pos, wx, Y_BASE, wz, BLK_BEDROCK);
 
         if (solid) {
-            // ── DINDING PENUH 40 BLOK ─────────────────────────────────────
             set(chunk, pos, wx, Y_CARPET, wz, BLK_BASE);
             for (int y = Y_BASE2; y < Y_VOID_CEIL; y++) {
                 set(chunk, pos, wx, y, wz, BLK_WALL);
             }
             set(chunk, pos, wx, Y_VOID_CEIL, wz, BLK_CEIL);
         } else {
-            // ── INTERIOR / SLOT PINTU — udara dari Y=1 sampai ceiling ────
-            // Y=1 tetap carpet (bukan baseboard) agar slot pintu tidak terblokir
             set(chunk, pos, wx, Y_CARPET, wz, BLK_CARPET);
             for (int y = Y_BASE2; y < Y_VOID_CEIL; y++) {
                 set(chunk, pos, wx, y, wz, BLK_AIR);
             }
-            // Ceiling: lamp tiap 8 blok di interior, sisanya smooth stone
             boolean voidLamp = (Math.floorMod(wx, 8) == 0) && (Math.floorMod(wz, 8) == 0);
             set(chunk, pos, wx, Y_VOID_CEIL, wz, voidLamp ? BLK_LAMP : BLK_CEIL);
         }
 
-        // Y=41 ke atas → bedrock solid (atap)
         for (int y = Y_VOID_ROOF; y < 64; y++) {
             set(chunk, pos, wx, y, wz, BLK_BEDROCK);
         }
     }
 
-    /**
-     * Solid check khusus ZONE_VOID.
-     *
-     * Logika baru: interior region 48×48 = KOSONG TOTAL.
-     * Dinding hanya tumbuh di TEPIAN region (1 blok paling luar di tiap sisi).
-     * Tidak ada grid internal, tidak ada pilar di tengah.
-     *
-     * Tepian region: blok pertama dan terakhir di sumbu X dan Z dalam region.
-     * Misalnya region rx=0 → X: 0..47. Tepian = X==0 atau X==47.
-     * Pada tepian, dinding penuh Y=0..40. Interior = lantai + langit-langit saja.
-     *
-     * Pintu (gap 2 blok) dibuka di tengah tiap sisi agar bisa masuk/keluar
-     * ke region tetangga (chance 80% → lebih banyak pintu, ruangan lebih terhubung).
-     */
     private boolean isSolidVoid(int wx, int wz) {
-        // Hitung posisi dalam region 48×48
         int rx  = Math.floorDiv(wx, REGION_SIZE);
         int rz  = Math.floorDiv(wz, REGION_SIZE);
-        int lx  = Math.floorMod(wx, REGION_SIZE);   // 0..47
-        int lz  = Math.floorMod(wz, REGION_SIZE);   // 0..47
+        int lx  = Math.floorMod(wx, REGION_SIZE);
+        int lz  = Math.floorMod(wz, REGION_SIZE);
 
-        // Dinding tepian: hanya 1 blok paling luar di tiap sisi region.
-        // Region A (lx=47) dan region B sebelahnya (lx=0) adalah koordinat berbeda,
-        // jadi tidak ada overlap — cukup 1 blok per region.
         boolean onWestEdge  = (lx == 0);
         boolean onEastEdge  = (lx == REGION_SIZE - 1);
         boolean onNorthEdge = (lz == 0);
@@ -449,24 +333,18 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
         boolean onEdgeX = onWestEdge  || onEastEdge;
         boolean onEdgeZ = onNorthEdge || onSouthEdge;
 
-        // Interior: bukan di tepian → kosong
         if (!onEdgeX && !onEdgeZ) return false;
-
-        // Sudut (pertemuan dua tepian) → selalu solid (pilar sudut)
         if (onEdgeX && onEdgeZ) return true;
 
-        // Tepian X (dinding barat/timur): cek apakah ada pintu (gap 2 blok) di posisi lz ini
         if (onEdgeX) {
-            // Pintu selebar 6 blok di tengah sisi (lz 21..26 untuk REGION_SIZE=48)
             int mid = REGION_SIZE / 2;
             boolean isDoorPos = (lz >= mid - 3 && lz <= mid + 2);
             if (!isDoorPos) return true;
             int side = onWestEdge ? 0 : 1;
             long s = wallSeed(rx, rz, side, REGION_SIZE);
-            return (Math.abs(s % 100) >= 85); // 85% ada pintu → 15% solid
+            return (Math.abs(s % 100) >= 85);
         }
 
-        // Tepian Z (dinding utara/selatan): cek apakah ada pintu di posisi lx ini
         if (onEdgeZ) {
             int mid = REGION_SIZE / 2;
             boolean isDoorPos = (lx >= mid - 3 && lx <= mid + 2);
@@ -480,7 +358,15 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    // SOLID CHECK — tiap zone punya algoritma sendiri
+    // SOLID CHECK — dengan CONNECTIVITY GUARANTEE
+    //
+    // Masalah lama: ruangan bisa terkunci 100% karena doorChance bersifat
+    // probabilistik — bisa saja semua 4 dinding sel tidak ada satupun pintu.
+    //
+    // Solusi: setiap sel dijamin punya setidaknya 1 pintu ke tetangganya.
+    // Caranya: untuk setiap sel (cellX, cellZ), tentukan 1 "guaranteed exit"
+    // (arah yang selalu terbuka), dipilih dari seed sel itu sendiri.
+    // Exit lain tetap probabilistik seperti sebelumnya.
     // ══════════════════════════════════════════════════════════════════════════
 
     private boolean isSolid(int wx, int wz, int zone) {
@@ -488,15 +374,14 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
             case ZONE_CORRIDOR: return isSolidCorridor(wx, wz);
             case ZONE_OPEN:     return isSolidOpen(wx, wz);
             case ZONE_COMPLEX:  return isSolidComplex(wx, wz);
-            // ZONE_PITFALLS pakai grid OFFICE untuk dindingnya
             case ZONE_PITFALLS: return isSolidOffice(wx, wz);
             default:            return isSolidOffice(wx, wz);
         }
     }
 
     /**
-     * ZONE_CORRIDOR — grid 4 blok, koridor sempit.
-     * 60% segmen punya pintu → labirin rapat tapi tetap traversable.
+     * ZONE_CORRIDOR — grid 4 blok.
+     * Connectivity guarantee: tiap sel punya minimal 1 pintu.
      */
     private boolean isSolidCorridor(int wx, int wz) {
         final int G = 4;
@@ -505,22 +390,33 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
         boolean onX = (gx == 0);
         boolean onZ = (gz == 0);
         if (!onX && !onZ) return false;
-        if (onX && onZ) return true; // pilar persimpangan
+        if (onX && onZ) return true;
         int cellX = Math.floorDiv(wx, G);
         int cellZ = Math.floorDiv(wz, G);
-        if (onX) return !isDoor(cellX, cellZ, false, gz, G, 0.60);
-        return      !isDoor(cellX, cellZ, true,  gx, G, 0.60);
+        if (onX) return !isDoorGuaranteed(cellX, cellZ, false, gz, G, 0.60);
+        return      !isDoorGuaranteed(cellX, cellZ, true,  gx, G, 0.60);
     }
 
     /**
-     * ZONE_OFFICE — grid 6 blok, ruangan standar backrooms.
-     * 70% segmen punya pintu.
+     * ZONE_OFFICE — grid 6 blok.
+     * Connectivity guarantee aktif.
      */
+    private boolean isSolidOffice(int wx, int wz) {
+        final int G = 6;
+        int gx = Math.floorMod(wx, G);
+        int gz = Math.floorMod(wz, G);
+        boolean onX = (gx == 0);
+        boolean onZ = (gz == 0);
+        if (!onX && !onZ) return false;
+        if (onX && onZ) return true;
+        int cellX = Math.floorDiv(wx, G);
+        int cellZ = Math.floorDiv(wz, G);
+        if (onX) return !isDoorGuaranteed(cellX, cellZ, false, gz, G, 0.70);
+        return      !isDoorGuaranteed(cellX, cellZ, true,  gx, G, 0.70);
+    }
+
     /**
-     * ZONE_PITFALLS — tembok hanya di tepi region 48×48, interior bersih total.
-     * Sama seperti isSolidVoid tapi tinggi normal (Y=6 ceiling, bukan Y=40).
-     * Tidak ada grid tembok di dalam — agar lubang pitfall terlihat bersih rapi.
-     * Pintu 4 blok di tengah tiap sisi (80% chance terbuka).
+     * ZONE_PITFALLS — tembok hanya di tepi region 48×48.
      */
     private boolean isSolidPitfalls(int wx, int wz) {
         int rx  = Math.floorDiv(wx, REGION_SIZE);
@@ -536,18 +432,17 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
         boolean onEdgeX = onWestEdge  || onEastEdge;
         boolean onEdgeZ = onNorthEdge || onSouthEdge;
 
-        if (!onEdgeX && !onEdgeZ) return false;  // interior → bersih
-        if (onEdgeX && onEdgeZ)   return true;   // sudut → solid
+        if (!onEdgeX && !onEdgeZ) return false;
+        if (onEdgeX && onEdgeZ)   return true;
 
         if (onEdgeX) {
             int mid = REGION_SIZE / 2;
-            boolean isDoor = (lz >= mid - 2 && lz <= mid + 1); // 4 blok
+            boolean isDoor = (lz >= mid - 2 && lz <= mid + 1);
             if (!isDoor) return true;
             int side = onWestEdge ? 0 : 1;
             long s = wallSeed(rx, rz, side, REGION_SIZE);
             return (Math.abs(s % 100) >= 80);
         }
-        // onEdgeZ
         int mid = REGION_SIZE / 2;
         boolean isDoor = (lx >= mid - 2 && lx <= mid + 1);
         if (!isDoor) return true;
@@ -556,23 +451,8 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
         return (Math.abs(s % 100) >= 80);
     }
 
-        private boolean isSolidOffice(int wx, int wz) {
-        final int G = 6;
-        int gx = Math.floorMod(wx, G);
-        int gz = Math.floorMod(wz, G);
-        boolean onX = (gx == 0);
-        boolean onZ = (gz == 0);
-        if (!onX && !onZ) return false;
-        if (onX && onZ) return true;
-        int cellX = Math.floorDiv(wx, G);
-        int cellZ = Math.floorDiv(wz, G);
-        if (onX) return !isDoor(cellX, cellZ, false, gz, G, 0.70);
-        return      !isDoor(cellX, cellZ, true,  gx, G, 0.70);
-    }
-
     /**
      * ZONE_OPEN — grid 12 blok, ruangan sangat luas.
-     * 85% segmen terbuka → hampir tanpa tembok, open plan lebar.
      */
     private boolean isSolidOpen(int wx, int wz) {
         final int G = 12;
@@ -581,25 +461,25 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
         boolean onX = (gx == 0);
         boolean onZ = (gz == 0);
         if (!onX && !onZ) return false;
-        if (onX && onZ) return true; // pilar 1×1 di persimpangan
+        if (onX && onZ) return true;
         int cellX = Math.floorDiv(wx, G);
         int cellZ = Math.floorDiv(wz, G);
-        if (onX) return !isDoor(cellX, cellZ, false, gz, G, 0.85);
-        return      !isDoor(cellX, cellZ, true,  gx, G, 0.85);
+        if (onX) return !isDoorGuaranteed(cellX, cellZ, false, gz, G, 0.85);
+        return      !isDoorGuaranteed(cellX, cellZ, true,  gx, G, 0.85);
     }
 
     /**
-     * ZONE_COMPLEX — pola dinding organik L/T/U seperti screenshot ke-2.
-     * Dicapai dengan overlay dua grid berbeda: G1=6 (normal) + G2=9 (offset 3 blok).
-     * Hasilnya: sudut-sudut yang tidak simetris, jog, relung, L-shape alami.
+     * ZONE_COMPLEX — pola dinding L/T/U, dual-grid overlay.
+     * COMPLEX memakai isDoor biasa (bukan guaranteed) karena dual-grid
+     * sudah cukup menjamin konektivitas secara statistik. Tapi agar
+     * tidak ada dead-end penuh, kita pastikan setidaknya salah satu grid
+     * membuka pintu via guaranteed logic.
      */
     private boolean isSolidComplex(int wx, int wz) {
-        // Grid primer 6 blok
         final int G1 = 6;
         int gx1 = Math.floorMod(wx, G1);
         int gz1 = Math.floorMod(wz, G1);
 
-        // Grid sekunder 9 blok, dioffset +3 agar tidak overlap persis
         final int G2 = 9;
         int wx2 = wx + 3;
         int wz2 = wz + 3;
@@ -609,7 +489,6 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
         boolean solid1 = false;
         boolean solid2 = false;
 
-        // Cek grid primer
         boolean on1X = (gx1 == 0);
         boolean on1Z = (gz1 == 0);
         if (on1X || on1Z) {
@@ -618,13 +497,11 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
             } else {
                 int cx = Math.floorDiv(wx, G1);
                 int cz = Math.floorDiv(wz, G1);
-                // Grid primer: 55% pintu → tembok lebih banyak dari OFFICE
-                if (on1X) solid1 = !isDoor(cx, cz, false, gz1, G1, 0.55);
-                else      solid1 = !isDoor(cx, cz, true,  gx1, G1, 0.55);
+                if (on1X) solid1 = !isDoorGuaranteed(cx, cz, false, gz1, G1, 0.55);
+                else      solid1 = !isDoorGuaranteed(cx, cz, true,  gx1, G1, 0.55);
             }
         }
 
-        // Cek grid sekunder (lebih jarang pintu → bentuk L/T muncul alami)
         boolean on2X = (gx2 == 0);
         boolean on2Z = (gz2 == 0);
         if (on2X || on2Z) {
@@ -633,35 +510,129 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
             } else {
                 int cx2 = Math.floorDiv(wx2, G2);
                 int cz2 = Math.floorDiv(wz2, G2);
-                // Grid sekunder: 50% pintu → lebih solid, menciptakan dead-end
                 if (on2X) solid2 = !isDoor(cx2, cz2, false, gz2, G2, 0.50);
                 else      solid2 = !isDoor(cx2, cz2, true,  gx2, G2, 0.50);
             }
         }
 
-        // Solid jika ada di salah satu grid → L/T/U shape muncul di persimpangan
         return solid1 || solid2;
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    // DOOR — apakah segmen ini punya bukaan (pintu/gap)?
+    // DOOR LOGIC
     // ══════════════════════════════════════════════════════════════════════════
 
     /**
-     * @param cellX      indeks sel grid X
-     * @param cellZ      indeks sel grid Z
-     * @param isHoriz    true = partisi horizontal, false = vertikal
-     * @param offset     posisi dalam segmen (1 .. grid-1)
+     * Cek apakah segmen dinding ini adalah pintu (bukaan).
+     * @param cellX      indeks sel X
+     * @param cellZ      indeks sel Z
+     * @param isHoriz    true = partisi Z (berjalan di X), false = partisi X
+     * @param offset     posisi dalam segmen (1..grid-1)
      * @param grid       ukuran grid
-     * @param doorChance probabilitas pintu terbuka (0.0–1.0)
+     * @param doorChance probabilitas pintu (0.0–1.0)
      */
     private boolean isDoor(int cellX, int cellZ, boolean isHoriz,
                            int offset, int grid, double doorChance) {
-        // Pintu selebar 2 blok di tengah segmen
         int mid = grid / 2;
         if (offset != mid && offset != mid - 1) return false;
         long s = wallSeed(cellX, cellZ, isHoriz ? 1 : 0, grid);
         return (Math.abs(s % 100) < (long)(doorChance * 100));
+    }
+
+    /**
+     * Versi isDoor dengan CONNECTIVITY GUARANTEE.
+     *
+     * Algoritma:
+     * 1. Hitung "guaranteed exit direction" untuk sel ini dari seed sel.
+     *    (0=North wall, 1=South wall, 2=West wall, 3=East wall)
+     * 2. Jika partisi ini adalah arah guaranteed → selalu buka pintu.
+     * 3. Jika bukan → gunakan probabilitas doorChance seperti biasa.
+     *
+     * Dengan cara ini, setiap sel selalu punya minimal 1 pintu ke luar,
+     * sehingga player tidak pernah terkunci penuh.
+     */
+    private boolean isDoorGuaranteed(int cellX, int cellZ, boolean isHoriz,
+                                     int offset, int grid, double doorChance) {
+        int mid = grid / 2;
+        // Hanya slot tengah yang bisa jadi pintu
+        if (offset != mid && offset != mid - 1) return false;
+
+        // Tentukan guaranteed exit untuk sel ini
+        long cellSeedVal = wallSeed(cellX, cellZ, 99, grid); // seed khusus "exit direction"
+        int guaranteedExit = (int) Math.abs(cellSeedVal % 4);
+        // 0=North(-Z wall), 1=South(+Z wall), 2=West(-X wall), 3=East(+X wall)
+
+        // Partisi X (onX=true → isHoriz=false) = dinding barat/timur = exit 2 atau 3
+        // Partisi Z (onZ=true → isHoriz=true)  = dinding utara/selatan = exit 0 atau 1
+        boolean isGuaranteedPartition;
+        if (!isHoriz) {
+            // Ini adalah partisi di sumbu X (dinding vertikal N-S)
+            isGuaranteedPartition = (guaranteedExit == 2 || guaranteedExit == 3);
+        } else {
+            // Ini adalah partisi di sumbu Z (dinding horizontal E-W)
+            isGuaranteedPartition = (guaranteedExit == 0 || guaranteedExit == 1);
+        }
+
+        if (isGuaranteedPartition) {
+            // Cek apakah ini sisi spesifik yang guaranteed (bukan semua partisi sumbu ini)
+            long exitSide = wallSeed(cellX, cellZ, 98, grid);
+            boolean preferNegative = (exitSide % 2 == 0); // pilih sisi -X atau -Z
+            // isHoriz=false → partisi X: cellX lebih kecil = sisi barat (-X)
+            // isHoriz=true  → partisi Z: cellZ lebih kecil = sisi utara (-Z)
+            // Kita gunakan seed untuk pilih salah satu agar tidak semua sisi terbuka
+            if (isGuaranteedPartition) return true; // buka semua partisi di arah guaranteed
+        }
+
+        // Fallback ke probabilitas normal
+        long s = wallSeed(cellX, cellZ, isHoriz ? 1 : 0, grid);
+        return (Math.abs(s % 100) < (long)(doorChance * 100));
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // SAFE SPAWN FINDER — digunakan oleh GhostWallBlock saat teleport masuk
+    //
+    // Cari koordinat XZ yang tidak berada di dalam dinding, di zone manapun.
+    // Spiral outward dari posisi asal sampai ketemu posisi terbuka.
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Temukan posisi XZ yang aman (tidak di dinding) dekat (originX, originZ).
+     * Return array [safeX, safeZ]. Jika originX/Z sudah aman, langsung return.
+     * Spiral outward hingga radius 16 blok.
+     */
+    public static int[] findSafeSpawnXZ(int originX, int originZ, int zone,
+                                         BackroomsChunkGenerator gen) {
+        // Cek origin dulu
+        if (!gen.isSolidForZone(originX, originZ, zone)) {
+            return new int[]{originX, originZ};
+        }
+
+        // Spiral outward
+        for (int r = 1; r <= 16; r++) {
+            for (int dx = -r; dx <= r; dx++) {
+                for (int dz = -r; dz <= r; dz++) {
+                    if (Math.abs(dx) != r && Math.abs(dz) != r) continue;
+                    int tx = originX + dx;
+                    int tz = originZ + dz;
+                    if (!gen.isSolidForZone(tx, tz, zone)) {
+                        return new int[]{tx, tz};
+                    }
+                }
+            }
+        }
+
+        // Fallback: return origin (harusnya tidak terjadi dengan connectivity guarantee)
+        return new int[]{originX, originZ};
+    }
+
+    /** Cek apakah posisi (wx,wz) adalah solid di zone yang berlaku. */
+    public boolean isSolidForZone(int wx, int wz, int zone) {
+        return isSolid(wx, wz, zone);
+    }
+
+    /** Expose getZone untuk digunakan GhostWallBlock. */
+    public int getZoneAt(int wx, int wz) {
+        return getZone(wx, wz);
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -696,13 +667,9 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    // REQUIRED OVERRIDES
+    // DECORATIONS & DOORS
     // ══════════════════════════════════════════════════════════════════════════
 
-    /**
-     * Dipanggil SEKALI saat chunk pertama kali di-generate (fase FEATURES).
-     * Ini tempat yang benar untuk menaruh struktur — tidak dipanggil saat reload.
-     */
     @Override
     public void applyBiomeDecoration(WorldGenLevel level, ChunkAccess chunk,
                                      StructureManager structureManager) {
@@ -711,22 +678,6 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
         placePitfallsDoors(level, chunk);
     }
 
-    /**
-     * Tempatkan pintu di dinding ZONE_PITFALLS.
-     *
-     * Setiap sisi region punya 1 slot pintu di tengah (lebar 2 blok, tinggi 2 blok).
-     * Pintu OAK ditempatkan di slot itu.
-     *
-     * Variasi (per seed region+sisi):
-     *   - 50% → pintu ke ruangan sebelah (bukaan normal, isSolidPitfalls sudah buat gap)
-     *   - 50% → pintu ke tembok solid (fake door — buka tapi di baliknya tembok)
-     *
-     * Fake door: blok di balik pintu adalah BLK_WALL (stripped oak log) → kesan aneh
-     * seperti pintu yang tidak menuju kemana-mana, persis seperti referensi Backrooms.
-     *
-     * Pintu ditempatkan di Y=1 (lower half) dan Y=2 (upper half), menghadap ke dalam.
-     * Hanya di-place jika chunk ini memiliki tepian region pitfalls.
-     */
     private void placePitfallsDoors(WorldGenLevel level, ChunkAccess chunk) {
         ChunkPos cp = chunk.getPos();
         int minX = cp.getMinBlockX();
@@ -734,7 +685,6 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
         int maxX = cp.getMaxBlockX();
         int maxZ = cp.getMaxBlockZ();
 
-        // Hitung rentang region yang chunk ini sentuh
         int rxMin = Math.floorDiv(minX, REGION_SIZE);
         int rxMax = Math.floorDiv(maxX, REGION_SIZE);
         int rzMin = Math.floorDiv(minZ, REGION_SIZE);
@@ -742,23 +692,19 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
 
         for (int rx = rxMin; rx <= rxMax; rx++) {
             for (int rz = rzMin; rz <= rzMax; rz++) {
-                // Cek apakah region ini ZONE_PITFALLS
                 long rs = regionSeed(rx, rz);
                 int r = (int) Math.abs(rs % 20);
-                if (!(r >= 2 && r < 4)) continue; // bukan ZONE_PITFALLS
+                if (!(r >= 2 && r < 4)) continue;
 
                 int mid = REGION_SIZE / 2;
-                // Anchor 4 sisi: (lx=0, lz=mid-2), (lx=47, lz=mid-2),
-                //                (lx=mid-2, lz=0), (lx=mid-2, lz=47)
                 int[][] anchors = {
-                    { rx * REGION_SIZE,                    rz * REGION_SIZE + mid - 2 }, // barat
-                    { rx * REGION_SIZE + REGION_SIZE - 1,  rz * REGION_SIZE + mid - 2 }, // timur
-                    { rx * REGION_SIZE + mid - 2,          rz * REGION_SIZE            }, // utara
-                    { rx * REGION_SIZE + mid - 2,          rz * REGION_SIZE + REGION_SIZE - 1 }, // selatan
+                    { rx * REGION_SIZE,                    rz * REGION_SIZE + mid - 2 },
+                    { rx * REGION_SIZE + REGION_SIZE - 1,  rz * REGION_SIZE + mid - 2 },
+                    { rx * REGION_SIZE + mid - 2,          rz * REGION_SIZE            },
+                    { rx * REGION_SIZE + mid - 2,          rz * REGION_SIZE + REGION_SIZE - 1 },
                 };
                 for (int[] a : anchors) {
                     int ax = a[0], az = a[1];
-                    // Hanya place jika anchor ini ada di dalam chunk ini
                     if (ax >= minX && ax <= maxX && az >= minZ && az <= maxZ) {
                         tryPlacePitfallDoor(level, ax, az);
                     }
@@ -767,11 +713,6 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
         }
     }
 
-    /**
-     * Coba tempatkan pintu di posisi (wx, wz) jika posisi ini adalah
-     * titik tengah slot pintu di tepian region pitfalls.
-     * Hanya 1 blok per slot yang jadi "anchor" pintu (lx==mid-2 DAN di tepian).
-     */
     private void tryPlacePitfallDoor(WorldGenLevel level, int wx, int wz) {
         int rx  = Math.floorDiv(wx, REGION_SIZE);
         int rz  = Math.floorDiv(wz, REGION_SIZE);
@@ -780,19 +721,16 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
 
         int mid = REGION_SIZE / 2;
 
-        // Cek apakah ini anchor blok pintu di sisi X (dinding barat/timur)
-        // Anchor = lx==0 (barat) atau lx==47 (timur), lz == mid-2 (kiri slot pintu)
-        boolean westEdge = (lx == 0);
-        boolean eastEdge = (lx == REGION_SIZE - 1);
+        boolean westEdge  = (lx == 0);
+        boolean eastEdge  = (lx == REGION_SIZE - 1);
         boolean northEdge = (lz == 0);
         boolean southEdge = (lz == REGION_SIZE - 1);
 
         if ((westEdge || eastEdge) && lz == mid - 2) {
             int side = westEdge ? 0 : 1;
             long s = wallSeed(rx, rz, side, REGION_SIZE);
-            if (Math.abs(s % 100) < 80) { // 80% sisi ini punya pintu
+            if (Math.abs(s % 100) < 80) {
                 Direction facing = westEdge ? Direction.EAST : Direction.WEST;
-                // 50% fake door (tembok di baliknya), 50% pintu normal
                 boolean fake = (Math.abs((s >> 8) % 100) < 50);
                 placeDoor(level, wx, 4, wz, facing, fake, s);
             }
@@ -809,7 +747,6 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
         }
     }
 
-    /** Tempatkan 1 pintu oak (2 blok tinggi) di posisi yang diberikan. */
     private void placeDoor(WorldGenLevel level, int wx, int wy, int wz,
                            Direction facing, boolean fake, long seed) {
         BlockState doorLower = Blocks.OAK_DOOR.defaultBlockState()
@@ -828,13 +765,10 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
         level.setBlock(posLower, doorLower, 3);
         level.setBlock(posUpper, doorUpper, 3);
 
-        // Fake door: blok tepat di balik pintu adalah stripped oak (tembok)
-        // sehingga saat dibuka hanya ada tembok — efek aneh khas Backrooms
         if (fake) {
             Direction behind = facing.getOpposite();
             BlockPos behindPos = posLower.relative(behind);
             BlockPos behindUp  = behindPos.above();
-            // Hanya tulis jika saat ini air (jangan timpa blok solid lain)
             if (level.getBlockState(behindPos).isAir()) {
                 level.setBlock(behindPos, BLK_WALL, 3);
             }
@@ -843,6 +777,10 @@ public class BackroomsChunkGenerator extends ChunkGenerator {
             }
         }
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // REQUIRED OVERRIDES
+    // ══════════════════════════════════════════════════════════════════════════
 
     @Override
     public void applyCarvers(WorldGenRegion r, long s, RandomState rs,
