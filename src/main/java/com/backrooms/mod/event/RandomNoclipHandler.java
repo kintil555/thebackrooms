@@ -19,9 +19,9 @@ import java.util.UUID;
 @Mod.EventBusSubscriber(modid = BackroomsMod.MOD_ID)
 public class RandomNoclipHandler {
 
-    private static final int DELAY_TICKS            = 60;   // 3 detik jatuh nembus tanah
-    private static final int OVERLAY_DURATION_TICKS = 60;   // 3 detik overlay glitch
-    private static final double SINK_SPEED          = -0.08; // pelan di awal, makin cepat
+    private static final int DELAY_TICKS            = 100;  // 5 detik jatuh nembus tanah (lebih lambat, lebih dramatic)
+    private static final int OVERLAY_DURATION_TICKS = 80;   // 4 detik overlay glitch
+    private static final double SINK_SPEED          = -0.03; // mulai sangat pelan
 
     private static final Map<UUID, Integer> pendingTeleport = new HashMap<>();
 
@@ -69,10 +69,12 @@ public class RandomNoclipHandler {
         var vel = player.getDeltaMovement();
         // progress 0.0→1.0 seiring waktu berlalu (countdown turun dari DELAY ke 0)
         double progress = 1.0 - (countdown / (double) DELAY_TICKS);
-        // Mulai pelan, makin lama makin cepat (efek gravitasi pull)
-        double targetSpeed = SINK_SPEED * (1.0 + progress * 3.0);
-        targetSpeed = Math.max(targetSpeed, -0.35); // cap speed maksimal
-        player.setDeltaMovement(vel.x * 0.4, Math.min(vel.y, targetSpeed), vel.z * 0.4);
+        // Mulai sangat pelan, makin lama makin cepat — kurva eksponensial
+        // progress^2 bikin awal lambat banget, lalu cepat di akhir
+        double targetSpeed = SINK_SPEED * (1.0 + progress * progress * 4.0);
+        targetSpeed = Math.max(targetSpeed, -0.25); // cap speed maksimal lebih rendah
+        // Reduksi gerakan horizontal supaya efek "tersedot ke bawah" lebih terasa
+        player.setDeltaMovement(vel.x * 0.5, Math.min(vel.y, targetSpeed), vel.z * 0.5);
     }
 
     private static void executeNoclip(ServerPlayer player) {
