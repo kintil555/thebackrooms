@@ -13,11 +13,15 @@ import net.minecraftforge.fml.common.Mod;
 /**
  * Render overlay glitch full-screen saat player noclip masuk Backrooms.
  *
- * Forge 1.21.1-52.1.0: RenderGuiEvent tidak ada (dihapus Mojang).
- * Pakai RenderTickEvent.Post + GuiGraphics manual + flush().
+ * Forge 1.21.1-52.1.0: RenderGuiEvent tidak ada — pakai RenderTickEvent.Post.
  *
- * Alpha dikontrol via RenderSystem.setShaderColor — ini yang paling reliable
- * di MC 1.21.1 untuk mengatur transparansi texture yang di-blit.
+ * Efek:
+ *   - Fase 1 (0–10%): fade IN cepat, screen mulai ijo
+ *   - Fase 2 (10–85%): hold + flicker + makin gelap seiring player turun
+ *   - Fase 3 (85–100%): fade OUT saat teleport
+ *
+ * Texture: hijau pixelated + scanlines + glitch bars.
+ * Tint warna: setShaderColor(R, G, B, alpha) → green channel dominan.
  */
 @Mod.EventBusSubscriber(modid = BackroomsMod.MOD_ID, value = Dist.CLIENT)
 public class NoclipOverlayRenderer {
@@ -25,7 +29,6 @@ public class NoclipOverlayRenderer {
     private static final ResourceLocation GLITCH_TEXTURE =
             ResourceLocation.fromNamespaceAndPath(BackroomsMod.MOD_ID, "textures/overlay/noclip_glitch.png");
 
-    // Ukuran asli texture PNG (harus match ukuran file)
     private static final int TEX_W = 800;
     private static final int TEX_H = 533;
 
@@ -42,6 +45,7 @@ public class NoclipOverlayRenderer {
         return remainingTicks > 0;
     }
 
+    // Dikurangi 1x per game tick (20 ticks/detik)
     @SubscribeEvent
     public static void onClientTick(TickEvent.ClientTickEvent.Post event) {
         if (remainingTicks > 0) {
@@ -59,38 +63,40 @@ public class NoclipOverlayRenderer {
         int screenW = mc.getWindow().getGuiScaledWidth();
         int screenH = mc.getWindow().getGuiScaledHeight();
 
-        // Hitung alpha berdasarkan sisa ticks
-        float progress = (float) remainingTicks / totalTicks; // 1.0 → 0.0
+        // progress: 1.0 saat baru trigger → 0.0 saat selesai
+        float progress = (float) remainingTicks / totalTicks;
 
         float alpha;
-        if (progress > 0.85f) {
-            // Fade IN cepat (15% pertama dari durasi)
-            alpha = (1.0f - progress) / 0.15f;
+        if (progress > 0.90f) {
+            // Fase FADE IN: 10% pertama — muncul cepat
+            alpha = (1.0f - progress) / 0.10f;
         } else if (progress < 0.15f) {
-            // Fade OUT (15% terakhir)
+            // Fase FADE OUT: 15% terakhir
             alpha = progress / 0.15f;
         } else {
-            // Hold penuh — flicker ringan efek glitch
+            // Fase HOLD: flicker intens saat player lagi turun nembus tanah
             float flicker = (float)(
-                    Math.sin(remainingTicks * 2.3f) * 0.06f
-                  + Math.cos(remainingTicks * 5.1f) * 0.04f
+                    Math.sin(remainingTicks * 3.7f) * 0.08f
+                  + Math.cos(remainingTicks * 7.3f) * 0.05f
+                  + Math.sin(remainingTicks * 1.1f) * 0.04f
             );
-            alpha = 0.92f + flicker;
+            // Makin lama makin solid (efek "masuk lebih dalam")
+            float depthFactor = 1.0f - (progress - 0.15f) / 0.75f; // 0→1 seiring waktu
+            alpha = 0.85f + depthFactor * 0.10f + flicker;
         }
         alpha = Math.max(0f, Math.min(1f, alpha));
 
-        // Setup blend state
+        // Setup blend
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
-        // setShaderColor mengatur RGBA multiplier untuk semua blit berikutnya
-        RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, alpha);
 
-        // Buat GuiGraphics dan render texture fullscreen
+        // Tint hijau: R=0.15, G=1.0, B=0.15 → texture jadi dominan hijau
+        // Alpha dikontrol terpisah via parameter keempat
+        RenderSystem.setShaderColor(0.15f, 1.0f, 0.15f, alpha);
+
         GuiGraphics graphics = new GuiGraphics(mc, mc.renderBuffers().bufferSource());
 
-        // blit(texture, x, y, u, v, renderW, renderH, texW, texH)
-        // Render dari (0,0) ke (screenW,screenH) — full screen stretch
-        // u=0,v=0 ambil dari pojok kiri atas texture
+        // Render texture fullscreen
         graphics.blit(
                 GLITCH_TEXTURE,
                 0, 0,
@@ -99,10 +105,9 @@ public class NoclipOverlayRenderer {
                 TEX_W, TEX_H
         );
 
-        // Flush wajib — kirim semua vertex buffer ke GPU
         graphics.flush();
 
-        // Reset state agar tidak mempengaruhi render berikutnya
+        // Reset state — WAJIB agar render dunia berikutnya tidak ketint hijau
         RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
         RenderSystem.disableBlend();
     }

@@ -44,12 +44,12 @@ public class NullZoneEventHandler {
     /** Radius XZ player harus masuk agar trigger null zone. */
     private static final double NULL_ZONE_RADIUS = 0.6;
 
-    /** 80 ticks = 4 detik — sama persis dengan OVERLAY_DURATION_TICKS. */
-    private static final int DELAY_TICKS = 80;
-    private static final int OVERLAY_DURATION_TICKS = 80;
+    /** 60 ticks = 3 detik — sama persis dengan OVERLAY_DURATION_TICKS. */
+    private static final int DELAY_TICKS = 60;
+    private static final int OVERLAY_DURATION_TICKS = 60;
 
-    /** Kecepatan tenggelam (negatif = ke bawah). */
-    private static final double SINK_SPEED = -0.18;
+    /** Kecepatan tenggelam awal (makin lama makin cepat via applySinkEffect). */
+    private static final double SINK_SPEED = -0.08;
 
     /** Map countdown per player: null = belum trigger, >0 = sedang countdown. */
     private static final Map<UUID, Integer> pendingTeleport = new HashMap<>();
@@ -142,8 +142,10 @@ public class NullZoneEventHandler {
     private void applySinkEffect(ServerPlayer player, int countdown) {
         Vec3 vel = player.getDeltaMovement();
         double progress = 1.0 - (countdown / (double) DELAY_TICKS);
-        double targetSpeed = SINK_SPEED * (0.5 + progress * 0.5);
-        player.setDeltaMovement(vel.x * 0.5, Math.min(vel.y, targetSpeed), vel.z * 0.5);
+        // Mulai pelan, makin lama makin cepat
+        double targetSpeed = SINK_SPEED * (1.0 + progress * 3.0);
+        targetSpeed = Math.max(targetSpeed, -0.35);
+        player.setDeltaMovement(vel.x * 0.4, Math.min(vel.y, targetSpeed), vel.z * 0.4);
     }
 
     // ─── Execute Noclip ───────────────────────────────────────────────────────
