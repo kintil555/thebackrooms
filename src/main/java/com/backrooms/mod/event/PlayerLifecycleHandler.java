@@ -21,6 +21,7 @@ public class PlayerLifecycleHandler {
         player.noPhysics = false;
         RandomNoclipHandler.clearPlayer(player.getUUID());
         BackroomsNoclipReturnHandler.clearPlayer(player.getUUID());
+        NullZoneEventHandler.clearPlayer(player.getUUID());
     }
 
     @SubscribeEvent
@@ -29,5 +30,6 @@ public class PlayerLifecycleHandler {
         player.noPhysics = false;
         RandomNoclipHandler.clearPlayer(player.getUUID());
         BackroomsNoclipReturnHandler.clearPlayer(player.getUUID());
+        NullZoneEventHandler.clearPlayer(player.getUUID());
     }
 }
