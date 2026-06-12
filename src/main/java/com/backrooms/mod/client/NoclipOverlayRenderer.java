@@ -6,8 +6,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.client.event.RegisterGuiOverlaysEvent;
-import net.minecraftforge.client.gui.overlay.IGuiOverlay;
+import net.minecraftforge.client.event.RenderGuiEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -63,14 +62,18 @@ public class NoclipOverlayRenderer {
     }
 
     /**
-     * Register overlay ke Forge overlay system.
-     * Harus dipanggil dari MOD event bus (bukan MinecraftForge.EVENT_BUS).
-     * Daftarkan di BackroomsMod clientSetup atau via separate @EventBusSubscriber(bus=MOD).
+     * Render overlay via RenderGuiEvent.Post (Forge 1.21.1+).
+     * Dipanggil otomatis oleh MinecraftForge.EVENT_BUS karena @EventBusSubscriber.
      */
-    public static IGuiOverlay createOverlay() {
-        return (gui, guiGraphics, partialTick, W, H) -> {
-            if (remainingTicks <= 0) return;
+    @SubscribeEvent
+    public static void onRenderGui(RenderGuiEvent.Post event) {
+        if (remainingTicks <= 0) return;
 
+        GuiGraphics guiGraphics = event.getGuiGraphics();
+        int W = Minecraft.getInstance().getWindow().getGuiScaledWidth();
+        int H = Minecraft.getInstance().getWindow().getGuiScaledHeight();
+
+        {
             Minecraft mc = Minecraft.getInstance();
             if (mc.level == null) return;
             // Jangan render saat di screen (inventory, dll)
@@ -155,6 +158,6 @@ public class NoclipOverlayRenderer {
 
             RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
             RenderSystem.disableBlend();
-        };
+        }
     }
 }
