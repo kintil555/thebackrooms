@@ -8,7 +8,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.gui.LayeredDraw;
 import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.client.event.RegisterGuiLayersEvent;
+import net.minecraftforge.client.event.AddGuiOverlayLayersEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -145,8 +145,8 @@ public class NoclipOverlayRenderer {
                             bus = Mod.EventBusSubscriber.Bus.MOD)
     public static class ClientModEvents {
         @SubscribeEvent
-        public static void onRegisterLayers(RegisterGuiLayersEvent event) {
-            event.registerAboveAll(
+        public static void onAddLayers(AddGuiOverlayLayersEvent event) {
+            event.getLayeredDraw().add(
                     ResourceLocation.fromNamespaceAndPath(BackroomsMod.MOD_ID, "noclip_overlay"),
                     NOCLIP_OVERLAY);
         }
