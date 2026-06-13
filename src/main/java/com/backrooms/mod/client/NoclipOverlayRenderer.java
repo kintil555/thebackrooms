@@ -5,9 +5,10 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.client.DeltaTracker;
+import net.minecraft.client.gui.LayeredDraw;
 import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.client.event.RegisterGuiOverlaysEvent;
-import net.minecraftforge.client.gui.overlay.IGuiOverlay;
+import net.minecraftforge.client.event.RegisterGuiLayersEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -27,8 +28,8 @@ public class NoclipOverlayRenderer {
     private static volatile int totalTicks     = 0;
     private static volatile long seed          = 0;
 
-    /** IGuiOverlay — didaftarkan via RegisterGuiOverlaysEvent di mod bus */
-    public static final IGuiOverlay NOCLIP_OVERLAY = NoclipOverlayRenderer::renderOverlay;
+    /** LayeredDraw.Layer — didaftarkan via RegisterGuiLayersEvent di mod bus */
+    public static final LayeredDraw.Layer NOCLIP_OVERLAY = NoclipOverlayRenderer::renderOverlay;
 
     /**
      * Dipanggil dari server via network packet.
@@ -45,19 +46,15 @@ public class NoclipOverlayRenderer {
         return remainingTicks > 0;
     }
 
-    private static void renderOverlay(net.minecraftforge.client.gui.overlay.ForgeGui gui,
-                                      GuiGraphics guiGraphics,
-                                      float partialTick,
-                                      int screenWidth,
-                                      int screenHeight) {
+    private static void renderOverlay(GuiGraphics guiGraphics, DeltaTracker deltaTracker) {
         if (remainingTicks <= 0) return;
 
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return;
         if (mc.screen != null) return;
 
-        int W = screenWidth;
-        int H = screenHeight;
+        int W = guiGraphics.guiWidth();
+        int H = guiGraphics.guiHeight();
 
         float progress = (float) remainingTicks / Math.max(totalTicks, 1); // 1.0→0.0
 
@@ -148,8 +145,10 @@ public class NoclipOverlayRenderer {
                             bus = Mod.EventBusSubscriber.Bus.MOD)
     public static class ClientModEvents {
         @SubscribeEvent
-        public static void onRegisterOverlays(RegisterGuiOverlaysEvent event) {
-            event.registerAboveAll("noclip_overlay", NOCLIP_OVERLAY);
+        public static void onRegisterLayers(RegisterGuiLayersEvent event) {
+            event.registerAboveAll(
+                    ResourceLocation.fromNamespaceAndPath(BackroomsMod.MOD_ID, "noclip_overlay"),
+                    NOCLIP_OVERLAY);
         }
     }
 
